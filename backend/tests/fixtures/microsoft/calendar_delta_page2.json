@@ -1,0 +1,4 @@
+{
+  "@odata.deltaLink": "https://graph.microsoft.com/v1.0/me/calendarView/delta?$deltatoken=d1",
+  "value": [{"id": "AAMk-gone", "@removed": {"reason": "deleted"}}]
+}

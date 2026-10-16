@@ -1,0 +1,21 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#Collection(event)",
+  "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/calendarView/delta?$skiptoken=page2",
+  "value": [
+    {
+      "id": "AAMk-1",
+      "subject": "4 pm vendor call",
+      "bodyPreview": "Discuss renewal",
+      "start": {"dateTime": "2026-10-16T10:30:00.0000000", "timeZone": "UTC"},
+      "end": {"dateTime": "2026-10-16T11:00:00.0000000", "timeZone": "UTC"},
+      "isAllDay": false,
+      "isCancelled": false,
+      "webLink": "https://outlook.office365.com/owa/?itemid=AAMk-1",
+      "iCalUId": "vendor@example.com",
+      "organizer": {"emailAddress": {"name": "Vendor", "address": "sales@vendor.com"}},
+      "attendees": [
+        {"emailAddress": {"name": "CEO", "address": "ceo@example.com"}, "status": {"response": "notResponded"}, "type": "required"}
+      ]
+    }
+  ]
+}

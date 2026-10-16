@@ -1,0 +1,4 @@
+{"transitions": [
+  {"id": "11", "name": "Start", "to": {"statusCategory": {"key": "indeterminate"}}},
+  {"id": "31", "name": "Done", "to": {"statusCategory": {"key": "done"}}}
+]}

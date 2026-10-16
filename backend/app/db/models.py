@@ -230,3 +230,36 @@ class LLMUsageRow(Base):
     cache_read_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     request_id: Mapped[str | None] = mapped_column(String(64))
+
+
+class OAuthTokenRow(TimestampMixin, Base):
+    """OAuth tokens for one provider, encrypted at rest with Fernet."""
+
+    __tablename__ = "oauth_tokens"
+
+    provider: Mapped[str] = mapped_column(String(32), primary_key=True)
+    access_token_enc: Mapped[str] = mapped_column(Text)
+    refresh_token_enc: Mapped[str | None] = mapped_column(Text)
+    expires_at: Mapped[datetime | None]
+    scopes: Mapped[str] = mapped_column(Text, default="")
+
+
+class OAuthStateRow(Base):
+    """One-time ``state`` values for in-flight OAuth authorizations (CSRF protection)."""
+
+    __tablename__ = "oauth_states"
+
+    state: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32))
+    code_verifier: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class SyncStateRow(TimestampMixin, Base):
+    """Incremental-sync cursors (sync tokens, delta links) per adapter and feed."""
+
+    __tablename__ = "sync_state"
+
+    adapter: Mapped[str] = mapped_column(String(32), primary_key=True)
+    feed: Mapped[str] = mapped_column(String(64), primary_key=True)
+    cursor: Mapped[str] = mapped_column(Text)

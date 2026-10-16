@@ -1,0 +1,8 @@
+{
+  "tasks": [
+    {"id": "86a1", "name": "Approve marketing budget", "text_content": "Q4 campaign", "url": "https://app.clickup.com/t/86a1",
+     "due_date": "1792195200000", "status": {"status": "in progress", "type": "custom"},
+     "assignees": [{"id": 501, "email": "ceo@example.com"}], "creator": {"email": "cmo@example.com"}}
+  ],
+  "last_page": false
+}

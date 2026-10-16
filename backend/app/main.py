@@ -5,12 +5,15 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from app import __version__
-from app.api import auth, routes_health, routes_usage
+from app.api import auth, routes_health, routes_oauth, routes_usage
+from app.clock import Clock, utc_now
 from app.config import Settings, get_settings, load_app_config
 from app.db.session import make_engine, make_session_factory
+from app.integrations.oauth import OAuthManager, TokenStore, google_provider, microsoft_provider
 from app.llm.client import AnthropicSender, LLMClient, MessageSender
-from app.llm.usage import BudgetGuard, Clock, UsageLedger, utc_now
+from app.llm.usage import BudgetGuard, UsageLedger
 from app.logging_config import configure_logging
+from app.security import TokenCipher
 
 
 def create_app(
@@ -43,6 +46,17 @@ def create_app(
         settings.anthropic_api_key.get_secret_value(), app_config.models.max_retries
     )
 
+    oauth: OAuthManager | None = None
+    fernet_key = settings.fernet_key.get_secret_value()
+    if fernet_key:
+        oauth = OAuthManager(
+            {"google": google_provider(settings), "microsoft": microsoft_provider(settings)},
+            TokenStore(session_factory, TokenCipher(fernet_key), clock),
+            session_factory,
+            settings.public_base_url,
+            clock=clock,
+        )
+
     app = FastAPI(title="CEO Assistant", version=__version__)
     app.state.settings = settings
     app.state.app_config = app_config
@@ -52,7 +66,9 @@ def create_app(
     app.state.usage_ledger = ledger
     app.state.budget = budget
     app.state.llm = LLMClient(sender, app_config.models, ledger, budget)
+    app.state.oauth = oauth
     app.include_router(routes_health.router)
     app.include_router(auth.router)
     app.include_router(routes_usage.router)
+    app.include_router(routes_oauth.router)
     return app

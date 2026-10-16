@@ -1,0 +1,21 @@
+{
+  "kind": "calendar#events",
+  "nextPageToken": "page-2",
+  "items": [
+    {
+      "id": "evt-budget",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=evt-budget",
+      "summary": "Budget sync",
+      "description": "Q3 numbers",
+      "organizer": {"email": "cfo@example.com"},
+      "start": {"dateTime": "2026-10-16T16:00:00+05:30"},
+      "end": {"dateTime": "2026-10-16T16:30:00+05:30"},
+      "iCalUID": "budget@example.com",
+      "attendees": [
+        {"email": "ceo@example.com", "self": true, "responseStatus": "needsAction"},
+        {"email": "cfo@example.com", "displayName": "Priya CFO", "responseStatus": "accepted"}
+      ]
+    }
+  ]
+}

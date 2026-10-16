@@ -1,0 +1,13 @@
+{
+  "kind": "calendar#events",
+  "nextSyncToken": "sync-1",
+  "items": [
+    {
+      "id": "evt-offsite",
+      "status": "confirmed",
+      "summary": "Leadership offsite",
+      "start": {"date": "2026-10-17"},
+      "end": {"date": "2026-10-18"}
+    }
+  ]
+}

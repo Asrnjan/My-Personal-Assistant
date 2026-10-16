@@ -1,0 +1,20 @@
+{
+  "issues": [
+    {
+      "key": "OPS-12",
+      "fields": {
+        "summary": "Vendor contract review",
+        "description": {"type": "doc", "version": 1, "content": [
+          {"type": "paragraph", "content": [{"type": "text", "text": "Review the renewal terms."}]},
+          {"type": "paragraph", "content": [{"type": "text", "text": "Flag anything over 10%."}]}
+        ]},
+        "duedate": "2026-10-19",
+        "status": {"name": "In Progress", "statusCategory": {"key": "indeterminate"}},
+        "assignee": {"accountId": "acc-ceo", "emailAddress": "ceo@example.com"},
+        "reporter": {"emailAddress": "meera@example.com"}
+      }
+    }
+  ],
+  "nextPageToken": "tok-2",
+  "isLast": false
+}

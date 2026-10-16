@@ -11,18 +11,14 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.clock import Clock, utc_now
 from app.db.models import AuditLogRow, LLMUsageRow
 from app.llm.errors import BudgetExceededError
 from app.llm.pricing import estimate_cost
 
 log = logging.getLogger(__name__)
 
-Clock = Callable[[], datetime]
 BUDGET_EXCEEDED_ACTION = "llm.budget_exceeded"
-
-
-def utc_now() -> datetime:
-    return datetime.now(UTC)
 
 
 @dataclass(frozen=True)

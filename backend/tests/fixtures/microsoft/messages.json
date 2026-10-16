@@ -1,0 +1,15 @@
+{
+  "value": [
+    {
+      "id": "msg-1",
+      "conversationId": "conv-1",
+      "subject": "Hiring plan sign-off",
+      "bodyPreview": "Please confirm headcount",
+      "receivedDateTime": "2026-10-16T05:00:00Z",
+      "webLink": "https://outlook.office365.com/owa/?ItemID=msg-1",
+      "from": {"emailAddress": {"name": "HR", "address": "HR@Example.com"}},
+      "toRecipients": [{"emailAddress": {"address": "CEO@example.com"}}],
+      "flag": {"flagStatus": "flagged"}
+    }
+  ]
+}

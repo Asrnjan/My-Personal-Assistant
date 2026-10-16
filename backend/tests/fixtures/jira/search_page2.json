@@ -1,0 +1,7 @@
+{
+  "issues": [
+    {"key": "OPS-13", "fields": {"summary": "Office lease", "description": null, "duedate": null,
+      "status": {"name": "To Do", "statusCategory": {"key": "new"}}, "assignee": null, "reporter": null}}
+  ],
+  "isLast": true
+}

@@ -1,0 +1,8 @@
+{
+  "data": [
+    {"gid": "120001", "name": "Prepare board update", "notes": "Slides for Thursday", "due_on": "2026-10-20", "due_at": null,
+     "permalink_url": "https://app.asana.com/0/0/120001", "completed": false,
+     "assignee": {"email": "ceo@example.com"}, "created_by": {"email": "chief@example.com"}}
+  ],
+  "next_page": {"offset": "off-2", "path": "/tasks?offset=off-2", "uri": "https://app.asana.com/api/1.0/tasks?offset=off-2"}
+}

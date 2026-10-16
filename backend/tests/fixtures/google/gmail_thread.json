@@ -1,0 +1,11 @@
+{
+  "id": "t1",
+  "messages": [
+    {"id": "s1", "threadId": "t1", "labelIds": ["SENT"], "internalDate": "1792140000000",
+     "payload": {"headers": [{"name": "From", "value": "ceo@example.com"}, {"name": "Subject", "value": "Delegated: Vendor contract review"}]}},
+    {"id": "r1", "threadId": "t1", "labelIds": ["INBOX"], "internalDate": "1792143600000", "snippet": "Accepted, on it.",
+     "payload": {"headers": [{"name": "From", "value": "Rahul Kumar <rahul@example.com>"}, {"name": "Subject", "value": "Re: Delegated: Vendor contract review"}]}},
+    {"id": "old", "threadId": "t1", "labelIds": ["INBOX"], "internalDate": "1700000000000",
+     "payload": {"headers": [{"name": "From", "value": "rahul@example.com"}]}}
+  ]
+}

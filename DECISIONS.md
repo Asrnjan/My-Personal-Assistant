@@ -55,3 +55,24 @@ Each entry records a decision, the alternatives considered, and the reason.
 ## 2026-10-16: The interface must look futuristic (requested by Ashish)
 - **Decision:** the PWA (Milestone 13) and any desktop UI use a futuristic visual style: dark-first, glowing accent colors, glassy translucent panels, an animated voice orb in place of a plain mic button, and smooth motion. Readability at 390px and the light-mode option stay required.
 - **Reason:** Ashish asked for the interface to look futuristic.
+
+## 2026-10-16: Sync HTTP client built on httpx, retries in our code
+- **Decision:** adapters share `HttpClient` (httpx, synchronous). It retries 429/5xx and network errors with jittered exponential backoff, honours `Retry-After` (seconds or HTTP date), and on a 401 refreshes the OAuth token once before retrying.
+- **Alternatives:** each vendor's Python SDK; async httpx.
+- **Reason:** one retry policy for every service, no extra paid or heavy SDKs, and `respx` mocks it cleanly. Sync keeps adapters simple; the scheduler runs them in worker threads.
+
+## 2026-10-16: OAuth start returns JSON instead of redirecting
+- **Decision:** `GET /oauth/{provider}/start` needs the bearer token and returns `{authorization_url}`; the client opens it. The callback is unauthenticated and protected by a one-time `state` (10-minute TTL) plus PKCE.
+- **Reason:** a browser redirect cannot carry the bearer header, and the start endpoint must not be open to anyone who finds the URL.
+
+## 2026-10-16: Microsoft calendar uses `calendarView/delta`
+- **Decision:** Outlook events come from the delta endpoint with `Prefer: outlook.timezone="UTC"`; the stored cursor is the full `@odata.deltaLink`. A 410 restarts a full sync. Google uses `nextSyncToken` the same way.
+- **Reason:** both providers' supported incremental-sync mechanisms; UTC avoids Windows timezone-name mapping.
+
+## 2026-10-16: Graph send returns no message id
+- **Decision:** `OutlookMailAdapter.send` returns an empty string.
+- **Reason:** `/me/sendMail` and `/reply` return 202 with no body. Acknowledgement tracking uses the conversation id instead.
+
+## 2026-10-16: Enabled-but-unconfigured adapters are skipped, not fatal
+- **Decision:** `build_adapters` skips an enabled adapter whose credentials are missing and logs exactly which variables to set.
+- **Reason:** the assistant should run with whatever the CEO has connected so far.

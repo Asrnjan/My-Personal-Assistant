@@ -1,0 +1,8 @@
+{
+  "id": "m2",
+  "threadId": "t2",
+  "labelIds": ["INBOX", "IMPORTANT"],
+  "snippet": "Board deck draft attached",
+  "internalDate": "1792134000000",
+  "payload": {"headers": [{"name": "Subject", "value": "Board deck"}, {"name": "From", "value": "board@example.com"}]}
+}

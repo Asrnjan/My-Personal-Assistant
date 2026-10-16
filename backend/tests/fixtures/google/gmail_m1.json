@@ -1,0 +1,15 @@
+{
+  "id": "m1",
+  "threadId": "t1",
+  "labelIds": ["INBOX", "STARRED", "IMPORTANT"],
+  "snippet": "Can you approve the vendor contract by Monday?",
+  "internalDate": "1792130400000",
+  "payload": {
+    "headers": [
+      {"name": "Subject", "value": "Vendor contract review"},
+      {"name": "From", "value": "Meera Shah <Meera@Example.com>"},
+      {"name": "To", "value": "CEO <ceo@example.com>, ops@example.com"},
+      {"name": "Message-ID", "value": "<abc123@mail.example.com>"}
+    ]
+  }
+}

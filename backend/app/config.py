@@ -135,6 +135,24 @@ class Settings(BaseSettings):
     api_auth_token: SecretStr = SecretStr("")
     anthropic_api_key: SecretStr = SecretStr("")
     fernet_key: SecretStr = SecretStr("")
+    # Base URL the OAuth providers redirect back to, e.g. https://assistant.example.com
+    public_base_url: str = "http://127.0.0.1:8000"
+
+    google_client_id: str = ""
+    google_client_secret: SecretStr = SecretStr("")
+    ms_client_id: str = ""
+    ms_client_secret: SecretStr = SecretStr("")
+    ms_tenant_id: str = "common"
+
+    jira_base_url: str = ""
+    jira_email: str = ""
+    jira_api_token: SecretStr = SecretStr("")
+    asana_access_token: SecretStr = SecretStr("")
+    asana_workspace_gid: str = ""
+    clickup_api_token: SecretStr = SecretStr("")
+    clickup_team_id: str = ""
+    clickup_user_id: str = ""
+    clickup_done_status: str = "complete"
 
 
 def load_app_config(path: Path) -> AppConfig:
