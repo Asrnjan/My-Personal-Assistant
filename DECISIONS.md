@@ -198,3 +198,27 @@ Each entry records a decision, the alternatives considered, and the reason.
 ## 2026-10-16: Deferred items
 - **Decision:** deferring sets status `deferred` with a date; the next sync after 08:00 that day reopens it for re-scoring.
 - **Reason:** sync never reopens items the CEO decided on, so deferral needs its own way back.
+
+## 2026-10-16: Telegram is the CEO's chat channel
+- **Decision:** only `TELEGRAM_CEO_CHAT_ID` can talk to the assistant through the bot; other chats get their chat id on `/start` and are otherwise ignored. A delegate's Accept or Question press counts only from the chat id in their contact entry. Voice notes are transcribed with the same local faster-whisper as `/stt`; the reply comes back as text plus a voice note (Piper → ffmpeg → OGG/Opus) when the CEO spoke.
+- **Reason:** the bot is reachable by anyone who finds it, so identity is the chat id, and replying in the CEO's own modality keeps it voice-first.
+
+## 2026-10-16: Telegram long polling, not a webhook
+- **Decision:** the bot long-polls `getUpdates` in a daemon thread (`TELEGRAM_POLLING=true`).
+- **Reason:** works behind NAT and on a laptop with no public URL; a webhook would need the tunnel to be up.
+
+## 2026-10-16: Teams acknowledgement goes through email
+- **Decision:** Teams messages use incoming webhooks (send-only), so the card asks the delegate to reply "Accepted" to the email copy.
+- **Reason:** a Teams bot needs Azure Bot registration, which isn't free-tier simple; incoming webhooks are free.
+
+## 2026-10-16: Server-side speech is optional
+- **Decision:** faster-whisper and Piper live in the backend's `voice` extra and load lazily; without them `/stt` and `/tts` answer 503 and clients use their own speech engines.
+- **Reason:** keeps the core install small and the tests offline, while a phone without speech recognition can still use the backend's.
+
+## 2026-10-16: The backend serves the PWA
+- **Decision:** `mobile-pwa/` is mounted at `/` after every API route (`PWA_DIR` overrides the folder). The service worker and API share one origin, so no CORS is needed for the phone app.
+- **Reason:** one URL behind the tunnel for both the app and its API.
+
+## 2026-10-16: Web Push keys
+- **Decision:** VAPID keys are generated locally (`scripts/generate_vapid_keys.py`, raw base64url keys) and push is sent with pywebpush; a 404 or 410 from the push service deletes the subscription.
+- **Reason:** free, standard Web Push with no third-party service.

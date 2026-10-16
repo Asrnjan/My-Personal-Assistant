@@ -10,17 +10,17 @@ Milestones from BUILD_PROMPT.md Section 11.
 - [x] 6. Briefing & scheduler: template-built morning brief (counts, what needs the CEO, suggested delegations, declines and drops, "Shall I go ahead?"), evening wrap-up (still open, tonight's meetings, unacknowledged and accepted delegations, rollover proposal, tomorrow's first meeting), P1 alerts only for new or changed P1 items (one combined alert per sync, items already in a delivered brief are skipped); trimmed to 45 spoken seconds with a per-item "tell me more" list; APScheduler jobs in the configured timezone (morning, evening, background sync every 15 min); delivered briefs stored and pushed on an in-process event bus; `GET /brief/today`, `GET /brief/latest`, `POST /brief/deliver`; `/sync` now also sends alerts; `docs/SCHEDULING.md` with cron and GitHub Actions alternatives
 - [x] 7. Conversation agent: `POST /converse` and `WS /ws`; Sonnet with tool use (list_items, get_item, explain_priority, delegate_item, decline_meeting, defer_item, close_task, drop_item, set_priority, set_preference, confirm_pending_action, cancel_pending_action); dialogue rules handled in code ("brief me", "yes", "go ahead with all", "cancel", "skip the second one"); dialogue state per conversation (recent turns, numbered references, actions awaiting a yes); approval policy from `config/approval_policy.yaml` (auto / confirm / never, financial and delete requests refused before any model call); every side effect is a pending action that needs the CEO's own yes; `GET /actions`, `POST /actions/{id}/confirm|cancel`; brief suggestions staged as pending actions so "Shall I go ahead?" works
 - [x] 8. Delegation: fuzzy + phonetic name resolution (rapidfuzz, soundex/metaphone) with ownership-area tie-break and a "Rahul Kumar or Rahul Mehta?" question; read-back with deadline and channels; Sonnet-drafted brief (template fallback) sent as HTML + text email with a ref in the subject and on every preferred channel; one failing channel doesn't stop the others and the CEO is told; Jira/Asana/ClickUp reassignment plus a comment, meetings forwarded to the delegate and declined with a note; FollowUp with per-channel refs; acknowledgement from email replies (Haiku-classified, keyword fallback), Telegram buttons and polled channels; one nudge 24h before the deadline; overdue marking with a notice; audit entry for every step; `GET /followups`, `GET/POST/PUT/DELETE /delegates`
-- [ ] 9. Notifiers
+- [x] 9. Notifiers: Telegram (Accept / Question buttons checked against the delegate's own chat, CEO text and voice notes answered with text plus a voice note, Yes / Cancel buttons for confirmations, scheduled briefs forwarded, `/start` tells anyone their chat id, long-poll loop in a daemon thread), Slack (DM with blocks, acknowledgement by reply or ✅/👍 reaction found by polling, threaded nudges), Teams (Adaptive Card via incoming webhook; acknowledgement via the email copy), CEO notices on the first channel that reaches the CEO, notifier registry driven by `adapters.notify`
 - [x] 10. Learning & preferences: overrides (delegating a non-P2 item, choosing a different delegate, declining or dropping a P1/P2, "make this top priority") and explicit rules stored as learning signals and summarized into a cached CEO-preferences block for scoring and conversation; `GET/POST /preferences`, `DELETE /preferences/{id}`
 - [ ] 11. Security hardening
-- [ ] 12. Desktop voice client
-- [ ] 13. Mobile PWA
+- [x] 12. Desktop voice client (`desktop/`): wake word (openWakeWord "hey jarvis") and push-to-talk hotkey, local faster-whisper STT, Piper (or Kokoro) TTS with barge-in, futuristic animated-orb window, tray icon, WebSocket client with REST fallback and reconnect, pushed briefs read aloud, PyInstaller build script; 233 tests, 99% coverage, own CI job
+- [x] 13. Mobile PWA (`mobile-pwa/`, served by the backend at `/`): installable, dark glass UI with a voice orb, browser speech recognition with `/stt` upload fallback, `/tts` fallback, live WebSocket events, pending-action Yes/Cancel cards, follow-ups view, Web Push (VAPID; `GET /push/vapid-public-key`, `POST /push/subscribe|unsubscribe`, expired subscriptions dropped), "brief me" deep link for phone shortcuts, offline shell; Playwright tests in CI. Backend `POST /stt` and `GET /tts` run faster-whisper and Piper/Kokoro locally (`pip install -e ".[voice]"`)
 - [ ] 14. Docs
 - [ ] 15. Full E2E pass
 
 ## Current work
 
-Next: Milestone 9, notifiers (Telegram, Slack, Teams; email notifier already in place).
+Next: Milestone 11, security hardening.
 
 ## Open issues
 
@@ -28,6 +28,3 @@ Next: Milestone 9, notifiers (Telegram, Slack, Teams; email notifier already in 
 - Asana lists tasks assigned to the CEO only; its API has no filter for tasks the CEO created across a workspace.
 
 - Starlette warns that `httpx` with its TestClient is deprecated; harmless for now, revisit when upgrading FastAPI.
-- The budget-exceeded callback is not yet wired to a notifier; that happens with Milestone 9.
-- Pushed briefs and alerts reach only in-process subscribers until `WS /ws` (Milestone 7) and the notifiers (Milestone 9) subscribe to the event bus.
-- Desktop and PWA CI jobs will be added with Milestones 12 and 13.

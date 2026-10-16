@@ -326,3 +326,15 @@ class ConversationRow(Base):
     awaiting: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class PushSubscriptionRow(Base):
+    """A browser's Web Push subscription (from the PWA's ``PushManager``)."""
+
+    __tablename__ = "push_subscriptions"
+
+    endpoint: Mapped[str] = mapped_column(String(1024), primary_key=True)
+    p256dh: Mapped[str] = mapped_column(String(256))
+    auth: Mapped[str] = mapped_column(String(64))
+    client_id: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)

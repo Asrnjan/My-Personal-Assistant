@@ -101,7 +101,9 @@ class Harness:
             return rows
 
 
-def build_harness(settings: Settings, **responder: Any) -> Iterator[Harness]:
+def build_harness(
+    settings: Settings, app_kwargs: dict[str, Any] | None = None, **responder: Any
+) -> Iterator[Harness]:
     clock = MutableClock(NOW)
     calendar = FakeCalendar(source=Source.GCAL)
     tasks = FakeTasks(source=Source.JIRA)
@@ -129,6 +131,7 @@ def build_harness(settings: Settings, **responder: Any) -> Iterator[Harness]:
         adapters_factory=lambda: adapters,
         notifiers_factory=notifiers,
         clock=clock,
+        **(app_kwargs or {}),
     )
     with TestClient(app) as client:
         token = client.post("/auth/token", json={"secret": API_SECRET, "client_name": "t"}).json()

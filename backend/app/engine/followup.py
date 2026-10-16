@@ -155,6 +155,12 @@ class FollowUpService:
         self._notices.tell(f"{name} accepted {title}.", direct=False)
         return True
 
+    def is_delegate(self, followup_id: str, sender_check: Callable[[Delegate], bool]) -> bool:
+        """True when ``sender_check`` accepts the delegate of this follow-up."""
+        with self._sessions() as s:
+            loaded = self._load(s, followup_id)
+            return loaded is not None and loaded[3] is not None and sender_check(loaded[3])
+
     def question(
         self,
         followup_id: str,

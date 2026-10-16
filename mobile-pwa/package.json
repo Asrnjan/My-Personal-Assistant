@@ -1,0 +1,16 @@
+{
+  "name": "ceo-assistant-mobile-pwa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Voice-first mobile PWA for the Chief of Staff assistant. Static files, no build step.",
+  "license": "MIT",
+  "scripts": {
+    "serve": "node scripts/serve.js",
+    "icons": "node scripts/make-icons.js",
+    "check": "node --check app.js && node --check sw.js && node --check scripts/serve.js && node --check scripts/make-icons.js && node --check playwright.config.js",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}

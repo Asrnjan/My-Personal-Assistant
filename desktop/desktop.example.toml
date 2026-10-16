@@ -1,0 +1,50 @@
+# Desktop voice client configuration.
+# Copy to ~/.config/ceo-assistant/desktop.toml (or point CEO_DESKTOP_CONFIG at it).
+# Every key is optional; the values below are the defaults. Each one can also be
+# set with an environment variable, shown on the right.
+
+[backend]
+url = "http://127.0.0.1:8000"          # CEO_DESKTOP_BACKEND_URL
+# The backend's API_AUTH_TOKEN. Used once to obtain a per-client token, which is
+# cached in ~/.config/ceo-assistant/desktop-token.json (CEO_DESKTOP_TOKEN_CACHE).
+secret = ""                            # CEO_DESKTOP_SECRET
+# Or paste an already issued token instead of the secret.
+token = ""                             # CEO_DESKTOP_TOKEN
+client_name = "desktop"
+request_timeout_seconds = 30.0
+reply_timeout_seconds = 60.0
+
+[wake]
+enabled = true                         # CEO_DESKTOP_WAKE_ENABLED
+# A pretrained openWakeWord model name ("hey jarvis", "alexa", "hey mycroft",
+# "hey rhasspy") or a path to your own .onnx / .tflite model.
+phrase = "hey jarvis"                  # CEO_DESKTOP_WAKE_PHRASE
+threshold = 0.5                        # CEO_DESKTOP_WAKE_THRESHOLD
+hotkey = "ctrl+alt+space"              # CEO_DESKTOP_HOTKEY (push-to-talk / barge-in)
+cooldown_seconds = 1.5
+
+[listen]
+silence_seconds = 0.8                  # pause that ends an utterance
+max_seconds = 15.0
+start_timeout_seconds = 6.0            # give up if nothing is said
+energy_threshold_dbfs = -45.0
+
+[stt]
+model = "small"                        # CEO_DESKTOP_STT_MODEL: tiny, base, small, medium, large-v3, ...
+compute_type = "int8"                  # CEO_DESKTOP_STT_COMPUTE_TYPE: int8 (CPU), float16 (GPU), ...
+device = "cpu"                         # CEO_DESKTOP_STT_DEVICE: cpu, cuda, auto
+language = "en"                        # CEO_DESKTOP_STT_LANGUAGE: "auto" to detect
+vad_filter = true
+beam_size = 1
+
+[tts]
+engine = "piper"                       # CEO_DESKTOP_TTS_ENGINE: piper or kokoro
+voice = ""                             # CEO_DESKTOP_TTS_VOICE: empty = en_US-lessac-medium (Piper) / af_heart (Kokoro)
+model_dir = "~/.local/share/ceo-assistant/voices"   # CEO_DESKTOP_TTS_MODEL_DIR (Piper voices)
+kokoro_lang = "a"                      # Kokoro language code: a = American English, b = British
+speed = 1.0
+
+[ui]
+chime = true                           # CEO_DESKTOP_CHIME: chime before pushed briefs and alerts
+color = "auto"                         # CEO_DESKTOP_COLOR: auto, always, never
+name = "JARVIS"

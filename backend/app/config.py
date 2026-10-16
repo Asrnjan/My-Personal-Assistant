@@ -23,6 +23,7 @@ DEFAULT_CONFIG_PATH = CONFIG_DIR / "config.example.yaml"
 DEFAULT_RUBRIC_PATH = CONFIG_DIR / "rubric.example.yaml"
 DEFAULT_CONTACTS_PATH = CONFIG_DIR / "contacts.example.yaml"
 DEFAULT_POLICY_PATH = CONFIG_DIR / "approval_policy.example.yaml"
+DEFAULT_PWA_DIR = REPO_ROOT / "mobile-pwa"
 
 
 class _Strict(BaseModel):
@@ -190,6 +191,45 @@ class Settings(BaseSettings):
     clickup_team_id: str = ""
     clickup_user_id: str = ""
     clickup_done_status: str = "complete"
+
+    telegram_bot_token: SecretStr = SecretStr("")
+    telegram_ceo_chat_id: str = ""
+    # Long-poll Telegram for button presses and the CEO's messages (needs the bot token).
+    telegram_polling: bool = True
+    slack_bot_token: SecretStr = SecretStr("")
+    slack_ceo_user_id: str = ""
+    # Incoming-webhook URL of a Teams channel the CEO reads.
+    teams_webhook_url: SecretStr = SecretStr("")
+
+    vapid_public_key: str = ""
+    vapid_private_key: SecretStr = SecretStr("")
+    vapid_subject: str = "mailto:assistant@example.com"
+
+    # Folder holding Piper ``.onnx`` voices (docs/SETUP.md, "Voices").
+    piper_voices_dir: Path = Path("voices")
+    # The installable web app, served at ``/``; empty disables it.
+    pwa_dir: Path | None = DEFAULT_PWA_DIR
+
+    def secret_values(self) -> list[str]:
+        """Every configured secret, for log redaction."""
+        return [
+            v.get_secret_value()
+            for v in (
+                self.api_auth_token,
+                self.anthropic_api_key,
+                self.fernet_key,
+                self.google_client_secret,
+                self.ms_client_secret,
+                self.jira_api_token,
+                self.asana_access_token,
+                self.clickup_api_token,
+                self.telegram_bot_token,
+                self.slack_bot_token,
+                self.teams_webhook_url,
+                self.vapid_private_key,
+            )
+            if v.get_secret_value()
+        ]
 
 
 def load_app_config(path: Path) -> AppConfig:

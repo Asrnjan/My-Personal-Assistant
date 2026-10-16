@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
+import threading
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
 from app import __version__
@@ -18,7 +21,9 @@ from app.api import (
     routes_items,
     routes_oauth,
     routes_people,
+    routes_push,
     routes_usage,
+    routes_voice,
     ws,
 )
 from app.clock import Clock, utc_now
@@ -38,14 +43,18 @@ from app.engine.rubric import load_rubric
 from app.engine.sync import SyncService
 from app.events import EventBus
 from app.integrations.notify.base import Notifier
-from app.integrations.notify.registry import build_notifiers
+from app.integrations.notify.registry import build_notifiers, telegram_api
+from app.integrations.notify.telegram import TelegramApi
+from app.integrations.notify.telegram_bot import TelegramBot
 from app.integrations.oauth import OAuthManager, TokenStore, google_provider, microsoft_provider
 from app.integrations.registry import Adapters, build_adapters
 from app.llm.client import AnthropicSender, LLMClient, MessageSender
 from app.llm.usage import BudgetGuard, UsageLedger
 from app.logging_config import configure_logging
+from app.push import PushSend, WebPusher, pywebpush_sender
 from app.scheduler import AssistantJobs, build_scheduler
 from app.security import TokenCipher
+from app.voice import SpeechToText, TextToSpeech, WhisperSTT, build_tts
 
 log = logging.getLogger(__name__)
 
@@ -57,16 +66,13 @@ def create_app(
     adapters_factory: Callable[[], Adapters] | None = None,
     notifiers_factory: Callable[[Adapters], list[Notifier]] | None = None,
     clock: Clock = utc_now,
+    stt: SpeechToText | None = None,
+    tts: TextToSpeech | None = None,
+    push_sender: PushSend | None = None,
+    telegram: TelegramApi | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
-    configure_logging(
-        settings.log_level,
-        secrets=[
-            settings.api_auth_token.get_secret_value(),
-            settings.anthropic_api_key.get_secret_value(),
-            settings.fernet_key.get_secret_value(),
-        ],
-    )
+    configure_logging(settings.log_level, secrets=settings.secret_values())
     app_config = load_app_config(settings.config_path)
     engine = make_engine(settings.database_url)
     session_factory = make_session_factory(engine)
@@ -130,6 +136,23 @@ def create_app(
     )
     jobs = AssistantJobs(sync_service, briefer, bus, session_factory, followups, actions)
 
+    stt = stt or WhisperSTT(app_config.stt)
+    tts = tts or build_tts(app_config.tts, settings.piper_voices_dir)
+    pusher: WebPusher | None = None
+    vapid_key = settings.vapid_private_key.get_secret_value()
+    if push_sender is not None or (vapid_key and settings.vapid_public_key):
+        pusher = WebPusher(
+            session_factory, push_sender or pywebpush_sender(vapid_key, settings.vapid_subject)
+        )
+        bus.subscribe(pusher.on_event)
+    bot: TelegramBot | None = None
+    telegram = telegram or telegram_api(settings)
+    if telegram is not None and settings.telegram_ceo_chat_id:
+        bot = TelegramBot(
+            telegram, settings.telegram_ceo_chat_id, agent, followups, stt=stt, tts=tts
+        )
+        bot.subscribe(bus)
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         try:
@@ -141,9 +164,13 @@ def create_app(
         if scheduler is not None:
             scheduler.start()
             log.info("scheduler started (%s)", app_config.timezone)
+        stop = threading.Event()
+        if bot is not None and settings.telegram_polling:
+            bot.start(stop)
         try:
             yield
         finally:
+            stop.set()
             if scheduler is not None:
                 scheduler.shutdown(wait=False)
 
@@ -172,6 +199,10 @@ def create_app(
     app.state.actions = actions
     app.state.followups = followups
     app.state.agent = agent
+    app.state.stt = stt
+    app.state.tts = tts
+    app.state.pusher = pusher
+    app.state.telegram_bot = bot
     app.include_router(routes_health.router)
     app.include_router(auth.router)
     app.include_router(routes_usage.router)
@@ -180,5 +211,11 @@ def create_app(
     app.include_router(routes_brief.router)
     app.include_router(routes_converse.router)
     app.include_router(routes_people.router)
+    app.include_router(routes_voice.router)
+    app.include_router(routes_push.router)
     app.include_router(ws.router)
+    if settings.pwa_dir is not None and (settings.pwa_dir / "index.html").exists():
+        # Last, so every API route above wins over a file of the same name.
+        mimetypes.add_type("application/manifest+json", ".webmanifest")
+        app.mount("/", StaticFiles(directory=settings.pwa_dir, html=True), name="pwa")
     return app

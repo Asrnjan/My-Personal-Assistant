@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Chief of Staff</title>
+  <meta name="description" content="Voice-first chief of staff: daily brief, confirmations and delegations.">
+  <meta name="theme-color" content="#04060f">
+  <meta name="color-scheme" content="dark light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Chief of Staff">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="space" aria-hidden="true">
+    <div class="stars stars-1"></div>
+    <div class="stars stars-2"></div>
+    <div class="nebula"></div>
+    <div class="grid-floor"></div>
+  </div>
+
+  <header class="topbar glass">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div class="brand-text">
+        <span class="brand-title">Chief of Staff</span>
+        <span class="brand-sub" id="today-label">Ready</span>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span id="conn-status" class="conn" data-state="off" role="status" aria-live="polite">
+        <span class="conn-dot" aria-hidden="true"></span><span class="conn-text">Not connected</span>
+      </span>
+      <button id="open-settings" class="icon-btn" type="button" aria-label="Open settings" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.9 4.6 1.7 1.7 0 0 0 9.93 3.04V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 8.9a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="main" class="layout">
+    <div id="banners" class="banners">
+      <div id="connect-banner" class="banner glass" hidden>
+        <p><strong>Connect to your assistant.</strong> Enter your shared secret in Settings to load your brief.</p>
+        <button type="button" class="btn btn-primary" data-action="open-settings">Connect</button>
+      </div>
+      <div id="ios-banner" class="banner glass" hidden>
+        <p><strong>Get notifications on iPhone:</strong> tap <span class="kbd">Share</span> then <span class="kbd">Add to Home Screen</span>, and open the app from there (iOS 16.4+).</p>
+        <button type="button" class="btn btn-ghost" data-action="dismiss-ios" aria-label="Dismiss iPhone install hint">Dismiss</button>
+      </div>
+    </div>
+
+    <section class="hero" aria-labelledby="orb-label">
+      <div class="orb-wrap">
+        <button id="orb" class="orb" type="button" data-state="idle" aria-label="Start talking" aria-describedby="orb-label">
+          <span class="orb-ring r1" aria-hidden="true"></span>
+          <span class="orb-ring r2" aria-hidden="true"></span>
+          <span class="orb-ring r3" aria-hidden="true"></span>
+          <span class="orb-halo" aria-hidden="true"></span>
+          <span class="orb-core" aria-hidden="true"></span>
+          <span class="orb-gloss" aria-hidden="true"></span>
+          <span class="orb-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+          <svg class="orb-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg>
+        </button>
+      </div>
+      <p id="orb-label" class="orb-label" aria-live="polite">Tap to talk</p>
+      <p id="caption" class="caption" aria-live="polite"></p>
+
+      <form id="text-form" class="composer glass" autocomplete="off">
+        <label for="text-input" class="sr-only">Type a message</label>
+        <input id="text-input" name="text" type="text" placeholder="Or type: “brief me”, “delegate…”" enterkeyhint="send" maxlength="2000">
+        <button type="submit" class="send-btn" aria-label="Send message">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </form>
+    </section>
+
+    <section id="brief-section" class="panel glass" aria-labelledby="brief-heading">
+      <div class="panel-head">
+        <h2 id="brief-heading"><span class="h-accent" aria-hidden="true"></span>Today's brief</h2>
+        <div class="panel-tools">
+          <div class="segmented" role="group" aria-label="Brief type">
+            <button type="button" class="seg" data-kind="morning" aria-pressed="true">AM</button>
+            <button type="button" class="seg" data-kind="evening" aria-pressed="false">PM</button>
+          </div>
+          <button id="refresh-brief" class="icon-btn sm" type="button" aria-label="Refresh brief">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="brief-summary" class="brief-summary" hidden>
+        <p id="brief-text" class="brief-text"></p>
+        <p id="brief-meta" class="brief-meta"></p>
+        <div class="brief-actions">
+          <button id="play-brief" type="button" class="btn btn-ghost">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 5v14l11-7z"/></svg>Play brief
+          </button>
+          <button id="tell-more" type="button" class="btn btn-primary" aria-expanded="false" aria-controls="brief-details">Tell me more</button>
+        </div>
+        <ul id="brief-details" class="brief-details" hidden></ul>
+      </div>
+      <div id="brief-cards" class="cards" aria-live="polite"></div>
+      <p id="brief-empty" class="empty">Your brief will appear here.</p>
+    </section>
+
+    <section id="pending-section" class="panel glass" aria-labelledby="pending-heading">
+      <div class="panel-head">
+        <h2 id="pending-heading"><span class="h-accent" aria-hidden="true"></span>Awaiting confirmation <span id="pending-count" class="count" hidden></span></h2>
+      </div>
+      <ul id="pending-list" class="stack-list" aria-live="polite"></ul>
+      <p id="pending-empty" class="empty">Nothing waiting on you.</p>
+    </section>
+
+    <section id="followups-section" class="panel glass" aria-labelledby="followups-heading">
+      <div class="panel-head">
+        <h2 id="followups-heading"><span class="h-accent" aria-hidden="true"></span>Delegations</h2>
+        <button id="refresh-followups" class="icon-btn sm" type="button" aria-label="Refresh delegations">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>
+        </button>
+      </div>
+      <ul id="followups-list" class="stack-list"></ul>
+      <p id="followups-empty" class="empty">No delegations in flight.</p>
+    </section>
+
+    <section id="transcript-section" class="panel glass" aria-labelledby="transcript-heading">
+      <div class="panel-head">
+        <h2 id="transcript-heading"><span class="h-accent" aria-hidden="true"></span>Conversation</h2>
+      </div>
+      <ol id="transcript" class="transcript" aria-live="polite"></ol>
+      <p id="transcript-empty" class="empty">Say “brief me” to start.</p>
+    </section>
+  </main>
+
+  <div id="tap-to-hear" class="tap-overlay" hidden>
+    <button id="tap-to-hear-btn" type="button" class="tap-btn">
+      <span class="tap-orb" aria-hidden="true"></span>
+      <span class="tap-text">Tap to hear your brief</span>
+    </button>
+  </div>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+  <dialog id="settings" class="sheet glass" aria-labelledby="settings-title">
+    <form method="dialog" class="sheet-head">
+      <h2 id="settings-title">Settings</h2>
+      <button class="icon-btn sm" value="close" aria-label="Close settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </form>
+
+    <section class="sheet-section" aria-labelledby="auth-title">
+      <h3 id="auth-title">Connection</h3>
+      <p id="auth-state" class="hint">Not connected.</p>
+      <form id="login-form" class="field-row" autocomplete="off">
+        <label for="secret-input">Shared secret</label>
+        <div class="input-group">
+          <input id="secret-input" name="secret" type="password" required autocomplete="current-password" placeholder="Your shared secret">
+          <button type="submit" class="btn btn-primary" id="login-btn">Connect</button>
+        </div>
+        <p id="login-error" class="error" role="alert" hidden></p>
+      </form>
+      <button id="logout-btn" type="button" class="btn btn-ghost" hidden>Sign out</button>
+    </section>
+
+    <section class="sheet-section" aria-labelledby="api-title">
+      <h3 id="api-title">Server</h3>
+      <form id="api-form" class="field-row" autocomplete="off">
+        <label for="api-base-input">API base URL <span class="hint-inline">(leave empty to use this site)</span></label>
+        <div class="input-group">
+          <input id="api-base-input" name="apiBase" type="url" inputmode="url" placeholder="https://assistant.example.com">
+          <button type="submit" class="btn btn-ghost">Save</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="sheet-section" aria-labelledby="push-title">
+      <h3 id="push-title">Notifications</h3>
+      <p class="hint">Morning brief, evening wrap-up and P1 alerts.</p>
+      <button id="push-btn" type="button" class="btn btn-primary">Enable push notifications</button>
+      <p id="push-state" class="hint" aria-live="polite"></p>
+      <p id="ios-hint" class="hint warn" hidden>On iPhone, push works only after <strong>Add to Home Screen</strong> (iOS 16.4+). Open the app from the home screen icon, then enable notifications.</p>
+    </section>
+  </dialog>
+</body>
+</html>
