@@ -100,6 +100,14 @@ class TtsConfig(_Strict):
         return value
 
 
+class IngestConfig(_Strict):
+    # Meetings are pulled for today plus this many following days.
+    days_ahead: int = Field(default=1, ge=0, le=14)
+    # On the first email sync, look back this far.
+    email_lookback_hours: int = Field(default=48, ge=1, le=24 * 30)
+    include_email: bool = True
+
+
 class AppConfig(_Strict):
     timezone: str = "Asia/Kolkata"
     brief_times: BriefTimes = Field(default_factory=BriefTimes)
@@ -109,6 +117,7 @@ class AppConfig(_Strict):
     wake_word: WakeWordConfig = Field(default_factory=WakeWordConfig)
     stt: SttConfig = Field(default_factory=SttConfig)
     tts: TtsConfig = Field(default_factory=TtsConfig)
+    ingest: IngestConfig = Field(default_factory=IngestConfig)
 
     @field_validator("timezone")
     @classmethod

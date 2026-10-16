@@ -12,6 +12,11 @@ adapters:
   tasks: [jira]             # jira | asana | clickup
   notify: [email, telegram] # email | telegram | slack | teams
 
+ingest:
+  days_ahead: 1            # today + tomorrow
+  email_lookback_hours: 48 # first email sync looks back this far
+  include_email: true      # flagged/starred emails become items
+
 models:
   bulk: claude-haiku-5-5          # scoring and classification
   conversation: claude-sonnet-5-5 # dialogue, delegation briefs, hard calls

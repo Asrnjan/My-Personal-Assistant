@@ -76,3 +76,24 @@ Each entry records a decision, the alternatives considered, and the reason.
 ## 2026-10-16: Enabled-but-unconfigured adapters are skipped, not fatal
 - **Decision:** `build_adapters` skips an enabled adapter whose credentials are missing and logs exactly which variables to set.
 - **Reason:** the assistant should run with whatever the CEO has connected so far.
+
+## 2026-10-16: Deduplication rules
+- **Decision:** a meeting with the same iCalUID as one already stored from another calendar is skipped. An email whose subject, with invite prefixes ("Invitation:", "Updated invitation:", "Accepted:") and Google's " @ date" suffix removed, matches a stored meeting's title and whose sender is that meeting's organizer or a participant is treated as the invite and skipped.
+- **Alternatives:** parsing `.ics` attachments from emails.
+- **Reason:** covers the common Google and Outlook invite formats without downloading attachments; a stranger's email with the same title still becomes its own item.
+
+## 2026-10-16: What a sync may change
+- **Decision:** a sync updates content (title, times, people) on every item but changes status only to a terminal state reported by the source (cancelled → dropped, declined at source → declined, done at source → done), and never reopens an item the CEO already decided on.
+- **Reason:** the CEO's choices must not be undone by a background job.
+
+## 2026-10-16: Cancelled and vanished meetings become `dropped`
+- **Decision:** meetings cancelled at the source, or missing from a full resync of the window, get status `dropped`.
+- **Reason:** the domain has no "cancelled" status; `dropped` already means "no longer needs attention".
+
+## 2026-10-16: Re-scoring is driven by a content hash
+- **Decision:** each item stores a hash of the fields the priority engine reads; when it changes, `scored_at` is cleared and the previous score is kept until re-scoring.
+- **Reason:** avoids paying to re-score unchanged items on every sync while keeping a usable score in the meantime.
+
+## 2026-10-16: Email items use a `mail:` id prefix
+- **Decision:** email items are stored with `source_id = "mail:<provider id>"`.
+- **Reason:** Outlook mail and Outlook calendar share the `outlook` source, so ids need a namespace to stay unique.

@@ -107,6 +107,11 @@ class ItemRow(TimestampMixin, Base):
     ceo_required: Mapped[bool | None] = mapped_column(Boolean)
     suggested_delegate_id: Mapped[str | None] = mapped_column(ForeignKey("delegates.id"))
     last_synced_at: Mapped[datetime | None]
+    # Same real-world meeting across sources (e.g. "ical:<uid>"); used for dedup.
+    dedup_key: Mapped[str | None] = mapped_column(String(512), index=True)
+    # Hash of the content the priority engine reads; a change means re-score.
+    content_hash: Mapped[str | None] = mapped_column(String(64))
+    scored_at: Mapped[datetime | None]
 
     decisions: Mapped[list[DecisionRow]] = relationship(back_populates="item")
 

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from fastapi import FastAPI
 
 from app import __version__
-from app.api import auth, routes_health, routes_oauth, routes_usage
+from app.api import auth, routes_health, routes_items, routes_oauth, routes_usage
 from app.clock import Clock, utc_now
 from app.config import Settings, get_settings, load_app_config
 from app.db.session import make_engine, make_session_factory
 from app.integrations.oauth import OAuthManager, TokenStore, google_provider, microsoft_provider
+from app.integrations.registry import Adapters, build_adapters
 from app.llm.client import AnthropicSender, LLMClient, MessageSender
 from app.llm.usage import BudgetGuard, UsageLedger
 from app.logging_config import configure_logging
@@ -20,6 +23,7 @@ def create_app(
     settings: Settings | None = None,
     *,
     llm_sender: MessageSender | None = None,
+    adapters_factory: Callable[[], Adapters] | None = None,
     clock: Clock = utc_now,
 ) -> FastAPI:
     settings = settings or get_settings()
@@ -67,8 +71,13 @@ def create_app(
     app.state.budget = budget
     app.state.llm = LLMClient(sender, app_config.models, ledger, budget)
     app.state.oauth = oauth
+    # Rebuilt per sync so newly connected accounts are picked up without a restart.
+    app.state.adapters_factory = adapters_factory or (
+        lambda: build_adapters(settings, app_config, oauth)
+    )
     app.include_router(routes_health.router)
     app.include_router(auth.router)
     app.include_router(routes_usage.router)
     app.include_router(routes_oauth.router)
+    app.include_router(routes_items.router)
     return app
