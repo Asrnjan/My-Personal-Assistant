@@ -1,5 +1,35 @@
 # Progress
 
+BUILD COMPLETE
+
+## Final summary
+
+**What was built.** A voice-first Chief of Staff for a CEO, per BUILD_PROMPT.md:
+
+- A FastAPI backend that syncs Google or Microsoft 365 calendars and mail plus Jira, Asana or ClickUp; scores every item with a rubric and Claude (Haiku in bulk, Sonnet for second opinions and conversation, prompt caching, structured outputs, a cost ledger and a monthly cap); builds a spoken morning brief, evening wrap-up and P1 alerts; holds a dialogue with tools where nothing happens without the CEO's yes; delegates with a drafted brief over email, Telegram, Slack and Teams, reassigns the source task or forwards the meeting, tracks acknowledgement, nudges and flags overdue work; and learns from overrides.
+- A Telegram bot (voice notes in and out, Yes/Cancel and Accept/Question buttons), an installable phone app with Web Push and a "brief me" deep link for Siri and Google Assistant, and a desktop app with a "hey jarvis" wake word and local speech.
+- Security: encrypted OAuth tokens, redacted logs, per-client tokens, rate limits, strict headers, untrusted-content wrapping, recipient allow-listing and a never-list for money and deletion.
+
+**How to run it.** `backend/.venv/bin/python scripts/seed_demo_data.py` for the offline demo; `scripts/dev.sh` to run it (app at http://127.0.0.1:8000/); `docker compose up --build` as an alternative. Accounts and keys: docs/SETUP.md. Phone access: docs/DEPLOY.md. Daily use: docs/USER_GUIDE.md.
+
+**Checks.** Backend: 282 passing tests (the ten Section 10 scenarios included; one live smoke test runs only with `RUN_LIVE_TESTS=1`), 97% coverage, `ruff` and `mypy --strict` clean. Desktop: 233 tests, 99% coverage. Phone app: 23 Playwright tests at phone width. CI runs all of them plus a Docker build and smoke test. The only paid dependency is the Anthropic API.
+
+**Known limitations.**
+- Adapter fixtures follow each API's documented shapes; they haven't been checked against live accounts yet.
+- Teams is send-only (incoming webhooks), so Teams delegations are acknowledged through the email copy.
+- Asana only sees tasks assigned to the CEO.
+- The built-in scheduler only runs while the backend runs; a sleeping laptop misses briefs (docs/SCHEDULING.md has the cron and GitHub Actions alternative).
+- The desktop app's wake word, microphone and tray were tested with fakes; first use on a real Windows or Mac machine should be watched.
+- iPhone Web Push needs iOS 16.4+ and the home-screen install.
+
+**Suggested next steps.**
+1. Connect one real Google or Microsoft account and Jira, run a week, and tune `config/rubric.yaml` from the overrides it learns.
+2. Record live API responses into the adapter fixtures.
+3. Add a Telegram webhook mode for servers with a public URL, and a Teams bot if acknowledging in Teams matters.
+4. Add a small settings screen in the phone app for contacts and learned preferences (today they are edited in YAML and through `/docs`).
+
+---
+
 Milestones from BUILD_PROMPT.md Section 11.
 
 - [x] 1. Foundation: config loading (env + YAML), SQLite + Alembic, domain models, redacting logger, bearer-token auth, `/health`, CI (ruff, mypy --strict, pytest with 85% coverage gate)
