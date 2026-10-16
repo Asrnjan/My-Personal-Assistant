@@ -207,6 +207,16 @@ class Settings(BaseSettings):
 
     # Folder holding Piper ``.onnx`` voices (docs/SETUP.md, "Voices").
     piper_voices_dir: Path = Path("voices")
+    # Requests a minute per client (bearer token, else address); 0 turns limiting off.
+    rate_limit_per_minute: int = 120
+    # Tighter limit on POST /auth/token per address, against guessing the shared secret.
+    auth_rate_limit_per_minute: int = 10
+    # Read the client address from CF-Connecting-IP / X-Forwarded-For (behind a tunnel).
+    trust_proxy_headers: bool = False
+    # Comma-separated origins allowed to call the API from a browser, e.g. a PWA
+    # hosted elsewhere. Empty: same origin only.
+    cors_origins: str = ""
+
     # The installable web app, served at ``/``; empty disables it.
     pwa_dir: Path | None = DEFAULT_PWA_DIR
 

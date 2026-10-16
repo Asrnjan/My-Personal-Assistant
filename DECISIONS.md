@@ -222,3 +222,11 @@ Each entry records a decision, the alternatives considered, and the reason.
 ## 2026-10-16: Web Push keys
 - **Decision:** VAPID keys are generated locally (`scripts/generate_vapid_keys.py`, raw base64url keys) and push is sent with pywebpush; a 404 or 410 from the push service deletes the subscription.
 - **Reason:** free, standard Web Push with no third-party service.
+
+## 2026-10-16: Rate limits
+- **Decision:** an in-process token bucket per client (hashed bearer token, else address): 120 requests a minute with the same burst, and 10 a minute per address on `POST /auth/token`. Behind Cloudflare Tunnel every request comes from 127.0.0.1, so `TRUST_PROXY_HEADERS=true` reads `CF-Connecting-IP`.
+- **Reason:** one user with a few clients needs no shared store; the tight auth limit stops guessing the shared secret.
+
+## 2026-10-16: Browser hardening
+- **Decision:** every response gets nosniff, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a Permissions-Policy allowing only the microphone; the app gets a CSP (`script-src 'self'`, Google Fonts allowed, `connect-src` open to https/wss so the PWA can use a backend on another origin). `/docs` has no CSP because Swagger UI loads from a CDN. CORS is off unless `CORS_ORIGINS` lists origins.
+- **Reason:** the PWA is served from the backend's own origin, so the defaults can be strict.

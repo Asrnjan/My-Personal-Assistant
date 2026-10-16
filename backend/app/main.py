@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -26,6 +27,7 @@ from app.api import (
     routes_voice,
     ws,
 )
+from app.api.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from app.clock import Clock, utc_now
 from app.config import Settings, get_settings, load_app_config
 from app.db.session import make_engine, make_session_factory
@@ -203,6 +205,22 @@ def create_app(
     app.state.tts = tts
     app.state.pusher = pusher
     app.state.telegram_bot = bot
+    origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_methods=["GET", "POST", "PUT", "DELETE"],
+            allow_headers=["Authorization", "Content-Type"],
+        )
+    app.add_middleware(
+        RateLimitMiddleware,
+        per_minute=settings.rate_limit_per_minute,
+        auth_per_minute=settings.auth_rate_limit_per_minute,
+        trust_proxy=settings.trust_proxy_headers,
+    )
+    # Added last so it wraps everything, 429s and CORS preflights included.
+    app.add_middleware(SecurityHeadersMiddleware)
     app.include_router(routes_health.router)
     app.include_router(auth.router)
     app.include_router(routes_usage.router)
