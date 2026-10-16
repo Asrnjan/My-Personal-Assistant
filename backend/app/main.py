@@ -10,18 +10,29 @@ from fastapi import FastAPI
 from sqlalchemy.exc import SQLAlchemyError
 
 from app import __version__
-from app.api import auth, routes_health, routes_items, routes_oauth, routes_usage
+from app.api import (
+    auth,
+    routes_brief,
+    routes_health,
+    routes_items,
+    routes_oauth,
+    routes_usage,
+)
 from app.clock import Clock, utc_now
 from app.config import Settings, get_settings, load_app_config
 from app.db.session import make_engine, make_session_factory
+from app.engine.briefing import Briefer
 from app.engine.contacts import load_contacts, seed_delegates
 from app.engine.priority import PriorityEngine
 from app.engine.rubric import load_rubric
+from app.engine.sync import SyncService
+from app.events import EventBus
 from app.integrations.oauth import OAuthManager, TokenStore, google_provider, microsoft_provider
 from app.integrations.registry import Adapters, build_adapters
 from app.llm.client import AnthropicSender, LLMClient, MessageSender
 from app.llm.usage import BudgetGuard, UsageLedger
 from app.logging_config import configure_logging
+from app.scheduler import AssistantJobs, build_scheduler
 from app.security import TokenCipher
 
 log = logging.getLogger(__name__)
@@ -72,6 +83,17 @@ def create_app(
     rubric = load_rubric(settings.rubric_path)
     contacts = load_contacts(settings.contacts_path)
     llm = LLMClient(sender, app_config.models, ledger, budget)
+    priority = PriorityEngine(llm, rubric, session_factory, clock)
+    sync_service = SyncService(
+        adapters_factory or (lambda: build_adapters(settings, app_config, oauth)),
+        session_factory,
+        app_config,
+        priority,
+        clock,
+    )
+    briefer = Briefer(session_factory, app_config, clock)
+    bus = EventBus()
+    jobs = AssistantJobs(sync_service, briefer, bus, session_factory)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -80,7 +102,15 @@ def create_app(
         except SQLAlchemyError as exc:
             # Keep serving so /health can report the problem.
             log.error("could not seed delegates (has `alembic upgrade head` run?): %s", exc)
-        yield
+        scheduler = build_scheduler(jobs, app_config) if settings.scheduler_enabled else None
+        if scheduler is not None:
+            scheduler.start()
+            log.info("scheduler started (%s)", app_config.timezone)
+        try:
+            yield
+        finally:
+            if scheduler is not None:
+                scheduler.shutdown(wait=False)
 
     app = FastAPI(title="CEO Assistant", version=__version__, lifespan=lifespan)
     app.state.settings = settings
@@ -92,15 +122,16 @@ def create_app(
     app.state.budget = budget
     app.state.llm = llm
     app.state.rubric = rubric
-    app.state.priority = PriorityEngine(llm, rubric, session_factory, clock)
+    app.state.priority = priority
     app.state.oauth = oauth
-    # Rebuilt per sync so newly connected accounts are picked up without a restart.
-    app.state.adapters_factory = adapters_factory or (
-        lambda: build_adapters(settings, app_config, oauth)
-    )
+    app.state.sync = sync_service
+    app.state.briefer = briefer
+    app.state.events = bus
+    app.state.jobs = jobs
     app.include_router(routes_health.router)
     app.include_router(auth.router)
     app.include_router(routes_usage.router)
     app.include_router(routes_oauth.router)
     app.include_router(routes_items.router)
+    app.include_router(routes_brief.router)
     return app

@@ -17,6 +17,13 @@ ingest:
   email_lookback_hours: 48 # first email sync looks back this far
   include_email: true      # flagged/starred emails become items
 
+briefing:
+  max_spoken_seconds: 45 # longer briefs are trimmed; "tell me more" has the rest
+  words_per_minute: 150
+
+scheduler:
+  sync_interval_minutes: 15 # background sync + P1 alerts; 0 turns it off
+
 models:
   bulk: claude-haiku-5-5          # scoring and classification
   conversation: claude-sonnet-5-5 # dialogue, delegation briefs, hard calls

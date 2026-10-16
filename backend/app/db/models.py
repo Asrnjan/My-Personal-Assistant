@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, ClassVar
 
 from sqlalchemy import (
     JSON,
     Boolean,
+    Date,
     DateTime,
     Enum,
     Float,
@@ -112,6 +113,8 @@ class ItemRow(TimestampMixin, Base):
     # Hash of the content the priority engine reads; a change means re-score.
     content_hash: Mapped[str | None] = mapped_column(String(64))
     scored_at: Mapped[datetime | None]
+    # Fingerprint of this item when the CEO last heard about it as a P1 (alert or brief).
+    alerted_hash: Mapped[str | None] = mapped_column(String(64))
 
     decisions: Mapped[list[DecisionRow]] = relationship(back_populates="item")
 
@@ -268,3 +271,16 @@ class SyncStateRow(TimestampMixin, Base):
     adapter: Mapped[str] = mapped_column(String(32), primary_key=True)
     feed: Mapped[str] = mapped_column(String(64), primary_key=True)
     cursor: Mapped[str] = mapped_column(Text)
+
+
+class BriefRow(Base):
+    """A brief that was delivered (pushed) to the CEO: morning, evening or alert."""
+
+    __tablename__ = "briefs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    for_date: Mapped[date] = mapped_column(Date)
+    text: Mapped[str] = mapped_column(Text)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)

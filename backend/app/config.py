@@ -111,6 +111,21 @@ class IngestConfig(_Strict):
     include_email: bool = True
 
 
+class BriefingConfig(_Strict):
+    # Spoken briefs are trimmed to fit this; "tell me more" gives the rest.
+    max_spoken_seconds: int = Field(default=45, ge=10, le=600)
+    words_per_minute: int = Field(default=150, ge=60, le=300)
+
+    @property
+    def max_words(self) -> int:
+        return self.max_spoken_seconds * self.words_per_minute // 60
+
+
+class SchedulerConfig(_Strict):
+    # Background sync + P1 alert check; 0 turns the periodic sync off.
+    sync_interval_minutes: int = Field(default=15, ge=0, le=24 * 60)
+
+
 class AppConfig(_Strict):
     timezone: str = "Asia/Kolkata"
     brief_times: BriefTimes = Field(default_factory=BriefTimes)
@@ -121,6 +136,8 @@ class AppConfig(_Strict):
     stt: SttConfig = Field(default_factory=SttConfig)
     tts: TtsConfig = Field(default_factory=TtsConfig)
     ingest: IngestConfig = Field(default_factory=IngestConfig)
+    briefing: BriefingConfig = Field(default_factory=BriefingConfig)
+    scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
 
     @field_validator("timezone")
     @classmethod
@@ -146,6 +163,8 @@ class Settings(BaseSettings):
     rubric_path: Path = DEFAULT_RUBRIC_PATH
     contacts_path: Path = DEFAULT_CONTACTS_PATH
     log_level: str = "INFO"
+    # Run the in-process scheduler; set false when cron or GitHub Actions drives it instead.
+    scheduler_enabled: bool = True
     api_auth_token: SecretStr = SecretStr("")
     anthropic_api_key: SecretStr = SecretStr("")
     fernet_key: SecretStr = SecretStr("")

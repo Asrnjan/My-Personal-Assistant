@@ -45,6 +45,7 @@ def settings(database_url: str) -> Settings:
         database_url=database_url,
         config_path=DEFAULT_CONFIG_PATH,
         api_auth_token=SecretStr(API_SECRET),
+        scheduler_enabled=False,
     )
 
 

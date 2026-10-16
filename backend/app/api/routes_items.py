@@ -14,8 +14,6 @@ from app.api.deps import DbSession
 from app.db.models import ItemRow
 from app.domain.enums import ItemKind, ItemStatus, PriorityBand
 from app.domain.item import Item
-from app.engine.ingest import Ingestor
-from app.integrations.registry import SyncStateStore
 
 router = APIRouter(tags=["items"])
 
@@ -30,20 +28,14 @@ class SyncReport(BaseModel):
     scored: int
     escalated: int
     rules_only: bool
+    # P1 items announced in an alert after this sync.
+    alerted: int
 
 
 @router.post("/sync", response_model=SyncReport)
 def sync(request: Request, _client: AuthenticatedClient) -> SyncReport:
-    state = request.app.state
-    ingestor = Ingestor(
-        state.adapters_factory(),
-        state.session_factory,
-        SyncStateStore(state.session_factory, state.clock),
-        state.app_config,
-        state.clock,
-    )
-    report = ingestor.run()
-    scoring = state.priority.score_pending()
+    result = request.app.state.jobs.sync_and_alert()
+    report, scoring = result.outcome.ingest, result.outcome.scoring
     return SyncReport(
         scored=scoring.scored,
         escalated=scoring.escalated,
@@ -54,6 +46,7 @@ def sync(request: Request, _client: AuthenticatedClient) -> SyncReport:
         duplicates=report.duplicates,
         errors=[*report.errors, *scoring.errors],
         not_configured=report.not_configured,
+        alerted=len(result.alert.items) if result.alert else 0,
     )
 
 

@@ -125,3 +125,28 @@ Each entry records a decision, the alternatives considered, and the reason.
 ## 2026-10-16: `POST /sync` scores after ingesting
 - **Decision:** the sync endpoint runs ingestion and then scores every open item whose `scored_at` is empty, and reports scored, escalated and rules-only counts.
 - **Reason:** one call leaves the item list ready to brief from; the scheduler in Milestone 6 reuses the same path.
+
+## 2026-10-16: Briefs are built from templates, not by the LLM
+- **Decision:** morning, evening and alert briefs are composed in code from already-scored items.
+- **Alternatives:** asking Sonnet to write each brief.
+- **Reason:** free, instant and predictable; the judgement already happened during scoring, and the conversation agent can elaborate when asked.
+
+## 2026-10-16: What counts as today's agenda
+- **Decision:** the morning brief covers open meetings starting that day that haven't ended yet, open tasks due by the end of that day (overdue included), undated tasks scored P1, and open email actions.
+- **Reason:** undated backlog tasks would otherwise flood every brief; undated P1s still need to be heard.
+
+## 2026-10-16: Brief length
+- **Decision:** each brief is trimmed to `briefing.max_spoken_seconds` (default 45) at `words_per_minute` (default 150) by shortening the longest item list first, replacing the tail with "and N more", down to a bare count. Every item stays in `details` for "tell me more".
+- **Reason:** keeps the spoken brief inside the spec's 45-second budget without losing anything.
+
+## 2026-10-16: When P1 alerts fire
+- **Decision:** after each sync, open P1 items whose fingerprint (title, start, due, band) differs from the one stored when the CEO last heard about them produce one combined alert. Delivering a morning brief marks its P1 items as heard. Meetings already over are skipped.
+- **Reason:** "only when a new P1 appears or a P1 changes", without a flood of separate alerts on the first sync or after the morning brief.
+
+## 2026-10-16: Push via an in-process event bus
+- **Decision:** delivered briefs are stored in a `briefs` table and published on an `EventBus`. The WebSocket and notifiers subscribe to it in later milestones; `GET /brief/latest` covers clients that were offline.
+- **Reason:** keeps the scheduler independent of how briefs reach the CEO.
+
+## 2026-10-16: Scheduler settings
+- **Decision:** APScheduler `BackgroundScheduler` in the configured timezone, with coalescing, one instance per job and a 15-minute misfire grace. `SCHEDULER_ENABLED=false` turns it off, and `POST /sync` plus `POST /brief/deliver` let cron or GitHub Actions drive the same jobs. A lock stops a scheduled sync and a manual `/sync` from ingesting at the same time.
+- **Reason:** the spec asks for APScheduler plus a documented cron alternative.
