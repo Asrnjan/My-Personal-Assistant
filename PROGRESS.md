@@ -15,12 +15,12 @@ Milestones from BUILD_PROMPT.md Section 11.
 - [x] 11. Security hardening: per-client token-bucket rate limits (120/min by default, 10/min per address on `POST /auth/token`, `/health` exempt, 429 with Retry-After), security headers with a CSP on the app (not on `/docs`), CORS off unless `CORS_ORIGINS` is set, all secrets redacted from logs; prompt-injection defenses tested end to end (external content wrapped as untrusted with spoofed closing tags escaped, model-suggested delegates checked against contacts, no action without the CEO's own yes, outbound recipients only from contacts or the item's participants, Telegram commands only from the CEO's chat)
 - [x] 12. Desktop voice client (`desktop/`): wake word (openWakeWord "hey jarvis") and push-to-talk hotkey, local faster-whisper STT, Piper (or Kokoro) TTS with barge-in, futuristic animated-orb window, tray icon, WebSocket client with REST fallback and reconnect, pushed briefs read aloud, PyInstaller build script; 233 tests, 99% coverage, own CI job
 - [x] 13. Mobile PWA (`mobile-pwa/`, served by the backend at `/`): installable, dark glass UI with a voice orb, browser speech recognition with `/stt` upload fallback, `/tts` fallback, live WebSocket events, pending-action Yes/Cancel cards, follow-ups view, Web Push (VAPID; `GET /push/vapid-public-key`, `POST /push/subscribe|unsubscribe`, expired subscriptions dropped), "brief me" deep link for phone shortcuts, offline shell; Playwright tests in CI. Backend `POST /stt` and `GET /tts` run faster-whisper and Piper/Kokoro locally (`pip install -e ".[voice]"`)
-- [ ] 14. Docs
-- [ ] 15. Full E2E pass
+- [x] 14. Docs: README, `docs/SETUP.md` (quick start, Claude key, Google, Microsoft, Jira, Asana, ClickUp, contacts and policy, Telegram via BotFather, Slack, Teams, voices, phone app install on Android and iOS, Web Push keys, desktop app), `docs/DEPLOY.md` (Cloudflare Tunnel, Oracle Cloud Always Free, Docker Compose, backups), `docs/VOICE_SHORTCUTS.md` (Siri Shortcut, Google Assistant routine), `docs/ARCHITECTURE.md`, `docs/USER_GUIDE.md`, `docs/SCHEDULING.md`
+- [x] 15. Full E2E pass: all ten Section 10 scenarios in `backend/tests/e2e/test_scenarios.py`; `scripts/seed_demo_data.py` runs morning brief → delegation → follow-up → wrap-up offline (and is itself tested); `scripts/dev.sh` starts the backend serving the phone app; `scripts/run_loop.sh`; `docker-compose.yml` with an optional Cloudflare tunnel, built and smoke-tested in CI
 
 ## Current work
 
-Next: Milestone 14, docs.
+All milestones done.
 
 ## Open issues
 

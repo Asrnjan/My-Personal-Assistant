@@ -1,0 +1,8 @@
+**/.venv
+**/node_modules
+**/__pycache__
+**/*.db
+.env
+.git
+mobile-pwa/test-results
+desktop

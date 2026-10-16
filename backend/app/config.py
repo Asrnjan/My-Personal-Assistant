@@ -158,7 +158,8 @@ class AppConfig(_Strict):
 class Settings(BaseSettings):
     """Environment-provided settings. Secrets are wrapped in ``SecretStr``."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # The repository-root .env, then one in the working directory (later wins).
+    model_config = SettingsConfigDict(env_file=(REPO_ROOT / ".env", ".env"), extra="ignore")
 
     database_url: str = "sqlite:///./assistant.db"
     config_path: Path = DEFAULT_CONFIG_PATH
@@ -219,6 +220,24 @@ class Settings(BaseSettings):
 
     # The installable web app, served at ``/``; empty disables it.
     pwa_dir: Path | None = DEFAULT_PWA_DIR
+
+    @field_validator(
+        "config_path",
+        "rubric_path",
+        "contacts_path",
+        "approval_policy_path",
+        "piper_voices_dir",
+        "pwa_dir",
+        mode="before",
+    )
+    @classmethod
+    def _from_repo_root(cls, value: str | Path | None) -> Path | None:
+        """Relative paths are relative to the repository root, wherever the app starts.
+        An empty value (only meaningful for ``PWA_DIR``) turns the feature off."""
+        if value is None or str(value).strip() == "":
+            return None
+        path = Path(value).expanduser()
+        return path if path.is_absolute() else REPO_ROOT / path
 
     def secret_values(self) -> list[str]:
         """Every configured secret, for log redaction."""

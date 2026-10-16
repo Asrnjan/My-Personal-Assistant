@@ -1,0 +1,39 @@
+# Optional, free local run: docker compose up --build
+# Then open http://127.0.0.1:8000/ (phone app) or /docs (API).
+services:
+  assistant:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        # "voice" adds server-side speech (faster-whisper + Piper); use "dev" for a slim image.
+        EXTRAS: voice
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite:////data/assistant.db
+      PIPER_VOICES_DIR: /data/voices
+      CONFIG_PATH: /app/config/config.yaml
+      RUBRIC_PATH: /app/config/rubric.yaml
+      CONTACTS_PATH: /app/config/contacts.yaml
+      APPROVAL_POLICY_PATH: /app/config/approval_policy.yaml
+    volumes:
+      - assistant-data:/data
+      # Your own config files (create them from the *.example.yaml files first).
+      - ./config:/app/config:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+
+  # Free public HTTPS URL for your phone (docs/DEPLOY.md). Start it with:
+  #   docker compose --profile tunnel up -d
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on: [assistant]
+    restart: unless-stopped
+
+volumes:
+  assistant-data:

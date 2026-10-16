@@ -230,3 +230,19 @@ Each entry records a decision, the alternatives considered, and the reason.
 ## 2026-10-16: Browser hardening
 - **Decision:** every response gets nosniff, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a Permissions-Policy allowing only the microphone; the app gets a CSP (`script-src 'self'`, Google Fonts allowed, `connect-src` open to https/wss so the PWA can use a backend on another origin). `/docs` has no CSP because Swagger UI loads from a CDN. CORS is off unless `CORS_ORIGINS` lists origins.
 - **Reason:** the PWA is served from the backend's own origin, so the defaults can be strict.
+
+## 2026-10-16: Paths relative to the repository
+- **Decision:** relative paths in `.env` (`CONFIG_PATH`, `CONTACTS_PATH`, `PIPER_VOICES_DIR`, ...) are resolved from the repository root, and `.env` is read from the repository root and then the working directory.
+- **Reason:** the backend is started from `backend/`, the docs and `.env.example` talk about `config/...` at the top level, and both must agree.
+
+## 2026-10-16: Your own config files are not committed
+- **Decision:** `config/*.yaml` (other than the `*.example.yaml` templates), `.env` and `voices/` are git-ignored; `scripts/dev.sh` creates them on first run.
+- **Reason:** contacts, rubric and secrets are personal; the repository only ships templates.
+
+## 2026-10-16: Offline demo
+- **Decision:** `scripts/seed_demo_data.py` uses the in-memory adapters and a deterministic stand-in for Claude that bands the demo items by title; it prints what would have been sent.
+- **Reason:** the Definition of Done asks for a fully offline demonstration, and a fixed script makes it reproducible and testable.
+
+## 2026-10-16: Docker image
+- **Decision:** one image (`backend/Dockerfile`) holds the backend, the phone app and ffmpeg, runs as a non-root user, keeps data in `/data`, and installs the `voice` extra by default (`EXTRAS=dev` for a slim build). Cloudflare's tunnel is an opt-in Compose profile.
+- **Reason:** a single free `docker compose up` for people who don't want a Python setup.

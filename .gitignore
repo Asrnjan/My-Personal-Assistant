@@ -13,3 +13,8 @@ node_modules/
 dist/
 build/
 *.egg-info/
+
+# Your own config (the *.example.yaml files are the templates)
+config/*.yaml
+!config/*.example.yaml
+voices/

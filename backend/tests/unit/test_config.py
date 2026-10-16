@@ -74,3 +74,12 @@ def test_get_settings_is_cached() -> None:
     get_settings.cache_clear()
     assert get_settings() is get_settings()
     get_settings.cache_clear()
+
+
+def test_relative_paths_resolve_from_the_repo_root() -> None:
+    from app.config import REPO_ROOT
+
+    s = Settings(config_path="config/config.yaml", pwa_dir="", piper_voices_dir="~/voices")
+    assert s.config_path == REPO_ROOT / "config" / "config.yaml"
+    assert s.pwa_dir is None
+    assert s.piper_voices_dir.is_absolute() and s.piper_voices_dir.name == "voices"

@@ -82,3 +82,22 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Tests
         run: npx playwright test
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -f backend/Dockerfile --build-arg EXTRAS=dev -t assistant .
+      - name: Smoke test
+        run: |
+          docker run -d --name assistant -p 8000:8000 \
+            -e API_AUTH_TOKEN=ci-secret -e DATABASE_URL=sqlite:////data/assistant.db assistant
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8000/health && break; sleep 1; done
+          curl -fs http://127.0.0.1:8000/health | grep '"database":"ok"'
+          curl -fs http://127.0.0.1:8000/ | grep -i "<html"
+          curl -fs -X POST http://127.0.0.1:8000/auth/token -H 'content-type: application/json' \
+            -d '{"secret":"ci-secret","client_name":"ci"}' | grep access_token
+      - name: Logs
+        if: failure()
+        run: docker logs assistant
