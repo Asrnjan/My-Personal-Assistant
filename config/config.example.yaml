@@ -15,6 +15,10 @@ adapters:
 models:
   bulk: claude-haiku-5-5          # scoring and classification
   conversation: claude-sonnet-5-5 # dialogue, delegation briefs, hard calls
+  bulk_effort: low                # low | medium | high | xhigh | max
+  conversation_effort: medium
+  max_retries: 3                  # SDK retries on 429, 5xx and connection errors
+  refusal_fallback: true          # retry a refused conversation call on a fallback model
 
 budget:
   monthly_usd: 20.0 # above this, scoring falls back to rules only

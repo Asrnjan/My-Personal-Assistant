@@ -131,3 +131,32 @@ def test_session_scope_commits_and_rolls_back(session_factory: sessionmaker[Sess
     with session_factory() as s:
         ids = set(s.scalars(select(DelegateRow.id)))
     assert ids == {"meera"}
+
+
+def test_datetimes_round_trip_as_utc_and_naive_rejected(
+    session_factory: sessionmaker[Session],
+) -> None:
+    from zoneinfo import ZoneInfo
+
+    local = datetime(2026, 10, 16, 14, 30, tzinfo=ZoneInfo("Asia/Kolkata"))
+    with session_factory.begin() as s:
+        s.add(
+            ItemRow(
+                source=Source.GCAL, source_id="tz", kind=ItemKind.MEETING, title="T", start=local
+            )
+        )
+    with session_factory() as s:
+        row = s.scalars(select(ItemRow).where(ItemRow.source_id == "tz")).one()
+    assert row.start == local
+    assert row.start is not None and row.start.tzinfo == UTC
+
+    with pytest.raises(Exception, match="naive"), session_factory.begin() as s:
+        s.add(
+            ItemRow(
+                source=Source.GCAL,
+                source_id="n",
+                kind=ItemKind.MEETING,
+                title="T",
+                start=datetime(2026, 1, 1),
+            )
+        )

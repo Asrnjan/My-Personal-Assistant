@@ -16,9 +16,11 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    TypeDecorator,
     UniqueConstraint,
     event,
 )
+from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import DeclarativeBase, Mapped, Mapper, mapped_column, relationship
 
 from app.domain.enums import (
@@ -46,8 +48,31 @@ def _enum(cls: type[Any], name: str) -> Enum:
     return Enum(cls, name=name, native_enum=False, values_callable=lambda e: [m.value for m in e])
 
 
+class UTCDateTime(TypeDecorator[datetime]):
+    """Stores datetimes as UTC and always returns them timezone-aware.
+
+    SQLite drops timezone information, so values are normalised to UTC on the
+    way in and tagged as UTC on the way out. Naive datetimes are rejected.
+    """
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError("naive datetimes are not allowed; use timezone-aware values")
+        return value.astimezone(UTC)
+
+    def process_result_value(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        if value is None:
+            return None
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
 class Base(DeclarativeBase):
-    type_annotation_map: ClassVar[dict[Any, Any]] = {datetime: DateTime(timezone=True)}
+    type_annotation_map: ClassVar[dict[Any, Any]] = {datetime: UTCDateTime()}
 
 
 class TimestampMixin:
@@ -188,3 +213,20 @@ class ApiTokenRow(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     revoked_at: Mapped[datetime | None]
+
+
+class LLMUsageRow(Base):
+    """Token usage and estimated cost of one Claude API call."""
+
+    __tablename__ = "llm_usage"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
+    model: Mapped[str] = mapped_column(String(64))
+    purpose: Mapped[str] = mapped_column(String(64))
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_creation_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_read_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    request_id: Mapped[str | None] = mapped_column(String(64))

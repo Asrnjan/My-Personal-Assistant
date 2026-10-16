@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import time
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
@@ -59,9 +59,17 @@ def _check_known(value: list[str], allowed: set[str]) -> list[str]:
     return value
 
 
+Effort = Literal["low", "medium", "high", "xhigh", "max"]
+
+
 class ModelsConfig(_Strict):
     bulk: str = "claude-haiku-5-5"
     conversation: str = "claude-sonnet-5-5"
+    bulk_effort: Effort = "low"
+    conversation_effort: Effort = "medium"
+    max_retries: int = Field(default=3, ge=0, le=10)
+    # Re-run a refused conversation request on a fallback model (server-side, Claude API).
+    refusal_fallback: bool = True
 
 
 class BudgetConfig(_Strict):
