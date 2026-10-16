@@ -97,3 +97,31 @@ Each entry records a decision, the alternatives considered, and the reason.
 ## 2026-10-16: Email items use a `mail:` id prefix
 - **Decision:** email items are stored with `source_id = "mail:<provider id>"`.
 - **Reason:** Outlook mail and Outlook calendar share the `outlook` source, so ids need a namespace to stay unique.
+
+## 2026-10-16: Deterministic pre-score before the LLM
+- **Decision:** every item gets a rubric-weighted pre-score from keyword, requester-tier, deadline and CEO-required heuristics. It is sent to Claude as a hint and is the whole score in rules-only mode.
+- **Reason:** gives the model a consistent anchor and keeps the assistant usable with no LLM budget left.
+
+## 2026-10-16: Rules-only thresholds
+- **Decision:** in rules-only mode a matching hard rule sets the band; otherwise a pre-score at or above `p1_min_score` (65) is P1, below `drop_below` (25) is P3 for meetings and P4 for everything else, and anything between is P2 with the ownership-area delegate match. Confidence is fixed at 0.5.
+- **Reason:** simple, explainable bands; the low confidence flags these for review once the budget resets.
+
+## 2026-10-16: Hard rules override the model
+- **Decision:** a matching hard rule (for example, anything from a board member) forces its band and clamps the score to its `min_score`/`max_score`, whatever Claude said.
+- **Reason:** some priorities are non-negotiable and must not depend on model judgement.
+
+## 2026-10-16: Escalation to Sonnet
+- **Decision:** after the Haiku pass, the top 5 items by score plus any item with confidence below 0.6 get a Sonnet second opinion that sees the first pass. If escalation fails, the first pass stands.
+- **Reason:** spends the expensive model only where a mistake costs the most or the cheap model is unsure.
+
+## 2026-10-16: Delegate suggestions are validated
+- **Decision:** a suggested delegate id not in the contacts list is replaced by the pre-score's ownership-area match for P2 items and cleared otherwise. Only P2 items keep a delegate.
+- **Reason:** the model must never route work to someone who isn't a known delegate.
+
+## 2026-10-16: Contacts seeding is insert-only
+- **Decision:** at startup, delegates in `contacts.yaml` that are missing from the database are inserted; existing rows are left alone.
+- **Reason:** later milestones edit delegates through the API, and a restart must not overwrite those edits.
+
+## 2026-10-16: `POST /sync` scores after ingesting
+- **Decision:** the sync endpoint runs ingestion and then scores every open item whose `scored_at` is empty, and reports scored, escalated and rules-only counts.
+- **Reason:** one call leaves the item list ready to brief from; the scheduler in Milestone 6 reuses the same path.

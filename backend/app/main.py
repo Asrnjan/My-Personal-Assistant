@@ -2,21 +2,29 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import logging
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from sqlalchemy.exc import SQLAlchemyError
 
 from app import __version__
 from app.api import auth, routes_health, routes_items, routes_oauth, routes_usage
 from app.clock import Clock, utc_now
 from app.config import Settings, get_settings, load_app_config
 from app.db.session import make_engine, make_session_factory
+from app.engine.contacts import load_contacts, seed_delegates
+from app.engine.priority import PriorityEngine
+from app.engine.rubric import load_rubric
 from app.integrations.oauth import OAuthManager, TokenStore, google_provider, microsoft_provider
 from app.integrations.registry import Adapters, build_adapters
 from app.llm.client import AnthropicSender, LLMClient, MessageSender
 from app.llm.usage import BudgetGuard, UsageLedger
 from app.logging_config import configure_logging
 from app.security import TokenCipher
+
+log = logging.getLogger(__name__)
 
 
 def create_app(
@@ -61,7 +69,20 @@ def create_app(
             clock=clock,
         )
 
-    app = FastAPI(title="CEO Assistant", version=__version__)
+    rubric = load_rubric(settings.rubric_path)
+    contacts = load_contacts(settings.contacts_path)
+    llm = LLMClient(sender, app_config.models, ledger, budget)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        try:
+            seed_delegates(session_factory, contacts)
+        except SQLAlchemyError as exc:
+            # Keep serving so /health can report the problem.
+            log.error("could not seed delegates (has `alembic upgrade head` run?): %s", exc)
+        yield
+
+    app = FastAPI(title="CEO Assistant", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.state.app_config = app_config
     app.state.engine = engine
@@ -69,7 +90,9 @@ def create_app(
     app.state.clock = clock
     app.state.usage_ledger = ledger
     app.state.budget = budget
-    app.state.llm = LLMClient(sender, app_config.models, ledger, budget)
+    app.state.llm = llm
+    app.state.rubric = rubric
+    app.state.priority = PriorityEngine(llm, rubric, session_factory, clock)
     app.state.oauth = oauth
     # Rebuilt per sync so newly connected accounts are picked up without a restart.
     app.state.adapters_factory = adapters_factory or (

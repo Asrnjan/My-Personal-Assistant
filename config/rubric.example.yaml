@@ -1,0 +1,58 @@
+# How the assistant decides what needs you. Copy to config/rubric.yaml and edit.
+
+# Relative importance of each criterion (any positive numbers; they are normalised).
+weights:
+  strategic_alignment: 3
+  revenue_customer_impact: 3
+  requester_weight: 3
+  deadline_proximity: 2
+  ceo_uniquely_required: 3
+  cost_of_skipping: 2
+
+# What the company is focused on. Items mentioning these score higher.
+company_goals:
+  - name: Close the Series B
+    keywords: [series b, fundraise, investor, term sheet, due diligence]
+  - name: Grow enterprise revenue
+    keywords: [enterprise, renewal, pipeline, deal, contract, pricing]
+  - name: Hire the leadership team
+    keywords: [hiring, candidate, offer, vp, head of]
+
+# Words that signal revenue or customer impact.
+revenue_keywords: [customer, client, revenue, deal, renewal, churn, invoice, sales]
+
+# Words that signal a high cost of skipping or low reversibility.
+urgency_keywords: [urgent, asap, today, blocker, escalation, legal, compliance, deadline, outage]
+
+# Who is asking. The first tier that matches wins (emails, then domains).
+requester_tiers:
+  board:
+    weight: 1.0
+    emails: [chair@board.example.com]
+    domains: [board.example.com]
+  key_client:
+    weight: 0.85
+    domains: [bigclient.com, megacorp.com]
+  exec:
+    weight: 0.6
+    emails: [cfo@example.com, cto@example.com, coo@example.com]
+  internal:
+    weight: 0.3
+    domains: [example.com]
+unknown_requester_weight: 0.2
+
+# Rules that always win over the model. `when` fields are ANDed; lists match any.
+hard_rules:
+  - name: Anything from the board is P1
+    when: {requester_tier: [board]}
+    band: P1_do_myself
+    min_score: 90
+  - name: Legal and compliance need the CEO
+    when: {keywords: [legal, lawsuit, compliance, regulator]}
+    band: P1_do_myself
+    min_score: 80
+
+# Rules-only fallback (used when the monthly budget is exhausted).
+rules_only_thresholds:
+  p1_min_score: 65
+  drop_below: 25

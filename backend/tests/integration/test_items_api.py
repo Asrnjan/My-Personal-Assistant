@@ -13,6 +13,7 @@ from app.domain.enums import PriorityBand, Source
 from app.integrations.base import CalendarEvent, EmailMessage, ExternalTask
 from app.integrations.fake import FakeCalendar, FakeMail, FakeTasks
 from app.integrations.registry import Adapters
+from app.llm.fake import FakeSender, echo_scores
 from app.main import create_app
 from tests.conftest import API_SECRET
 
@@ -47,7 +48,12 @@ def api(settings: Settings) -> Iterator[TestClient]:
         mail=[FakeMail(inbox=[EmailMessage(Source.GMAIL, "e1", "t1", "Board deck", "b@x.com")])],
         not_configured=["asana: set ASANA_ACCESS_TOKEN"],
     )
-    app = create_app(settings, adapters_factory=lambda: adapters, clock=lambda: NOW)
+    app = create_app(
+        settings,
+        adapters_factory=lambda: adapters,
+        clock=lambda: NOW,
+        llm_sender=FakeSender(default=echo_scores()),
+    )
     with TestClient(app) as c:
         token = c.post("/auth/token", json={"secret": API_SECRET, "client_name": "t"}).json()
         c.headers["Authorization"] = f"Bearer {token['access_token']}"
@@ -58,6 +64,7 @@ def api(settings: Settings) -> Iterator[TestClient]:
 def test_sync_then_list(api: TestClient) -> None:
     report = api.post("/sync").json()
     assert report["created"] == 4
+    assert report["scored"] == 4 and report["rules_only"] is False
     assert report["not_configured"] == ["asana: set ASANA_ACCESS_TOKEN"]
     titles = {i["title"] for i in api.get("/items").json()}
     assert titles == {"Budget sync", "Offsite", "Contract", "Board deck"}

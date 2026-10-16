@@ -18,7 +18,10 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_CONFIG_PATH = REPO_ROOT / "config" / "config.example.yaml"
+CONFIG_DIR = REPO_ROOT / "config"
+DEFAULT_CONFIG_PATH = CONFIG_DIR / "config.example.yaml"
+DEFAULT_RUBRIC_PATH = CONFIG_DIR / "rubric.example.yaml"
+DEFAULT_CONTACTS_PATH = CONFIG_DIR / "contacts.example.yaml"
 
 
 class _Strict(BaseModel):
@@ -140,6 +143,8 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./assistant.db"
     config_path: Path = DEFAULT_CONFIG_PATH
+    rubric_path: Path = DEFAULT_RUBRIC_PATH
+    contacts_path: Path = DEFAULT_CONTACTS_PATH
     log_level: str = "INFO"
     api_auth_token: SecretStr = SecretStr("")
     anthropic_api_key: SecretStr = SecretStr("")

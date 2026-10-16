@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from collections import deque
 from collections.abc import Callable, Iterable
@@ -91,3 +92,28 @@ class FakeSender:
         else:
             raise AssertionError("FakeSender has no response queued for this request")
         return item if isinstance(item, Message) else item(params)
+
+
+_ITEM_ID = re.compile(r'"id": "([^"]+)"')
+
+
+def echo_scores(score: int = 50, band: str = "P2_delegate", confidence: float = 0.9) -> Responder:
+    """A responder that scores every item found in a priority prompt the same way."""
+
+    def respond(params: dict[str, Any]) -> Message:
+        user = params["messages"][0]["content"]
+        scores = [
+            {
+                "item_id": item_id,
+                "score": score,
+                "band": band,
+                "reason": "Scored by the offline stand-in.",
+                "confidence": confidence,
+                "ceo_required": band == "P1_do_myself",
+                "suggested_delegate_id": None,
+            }
+            for item_id in _ITEM_ID.findall(user)
+        ]
+        return fake_message({"scores": scores}, model=params["model"])
+
+    return respond

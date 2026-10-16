@@ -27,6 +27,9 @@ class SyncReport(BaseModel):
     duplicates: int
     errors: list[str]
     not_configured: list[str]
+    scored: int
+    escalated: int
+    rules_only: bool
 
 
 @router.post("/sync", response_model=SyncReport)
@@ -40,12 +43,16 @@ def sync(request: Request, _client: AuthenticatedClient) -> SyncReport:
         state.clock,
     )
     report = ingestor.run()
+    scoring = state.priority.score_pending()
     return SyncReport(
+        scored=scoring.scored,
+        escalated=scoring.escalated,
+        rules_only=scoring.rules_only,
         created=report.created,
         updated=report.updated,
         closed=report.closed,
         duplicates=report.duplicates,
-        errors=report.errors,
+        errors=[*report.errors, *scoring.errors],
         not_configured=report.not_configured,
     )
 
