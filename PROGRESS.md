@@ -2,7 +2,7 @@
 
 Milestones from BUILD_PROMPT.md Section 11.
 
-- [ ] 1. Foundation
+- [x] 1. Foundation: config loading (env + YAML), SQLite + Alembic, domain models, redacting logger, bearer-token auth, `/health`, CI (ruff, mypy --strict, pytest with 85% coverage gate)
 - [ ] 2. LLM layer
 - [ ] 3. Integrations
 - [ ] 4. Ingestion & normalization
@@ -20,8 +20,9 @@ Milestones from BUILD_PROMPT.md Section 11.
 
 ## Current work
 
-None yet.
+Next: Milestone 2, the LLM layer.
 
 ## Open issues
 
-None yet.
+- Starlette warns that `httpx` with its TestClient is deprecated; harmless for now, revisit when upgrading FastAPI.
+- Desktop and PWA CI jobs will be added with Milestones 12 and 13.

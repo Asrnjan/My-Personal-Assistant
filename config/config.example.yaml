@@ -1,0 +1,34 @@
+# Copy to config/config.yaml and edit. Every key is optional; defaults are shown.
+timezone: Asia/Kolkata
+
+brief_times:
+  morning: "08:00"
+  evening: "18:30"
+
+# Which integrations are enabled.
+adapters:
+  calendar: [google]        # google | microsoft
+  email: [google]           # google | microsoft
+  tasks: [jira]             # jira | asana | clickup
+  notify: [email, telegram] # email | telegram | slack | teams
+
+models:
+  bulk: claude-haiku-5-5          # scoring and classification
+  conversation: claude-sonnet-5-5 # dialogue, delegation briefs, hard calls
+
+budget:
+  monthly_usd: 20.0 # above this, scoring falls back to rules only
+
+wake_word:
+  phrase: hey jarvis
+  push_to_talk_hotkey: ctrl+alt+space
+
+stt:
+  engine: faster-whisper
+  model_size: small
+  compute_type: int8
+  language: null # auto-detect
+
+tts:
+  engine: piper # piper | kokoro
+  voice: en_US-lessac-medium
