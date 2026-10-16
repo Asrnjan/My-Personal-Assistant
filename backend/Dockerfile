@@ -14,6 +14,8 @@ COPY backend/app backend/app
 ARG EXTRAS=voice
 RUN pip install "./backend[${EXTRAS}]"
 COPY config config
+# Helpers such as the Web Push key generator.
+COPY scripts/generate_vapid_keys.py scripts/
 COPY mobile-pwa/index.html mobile-pwa/app.js mobile-pwa/sw.js mobile-pwa/styles.css \
      mobile-pwa/manifest.webmanifest mobile-pwa/
 COPY mobile-pwa/icons mobile-pwa/icons

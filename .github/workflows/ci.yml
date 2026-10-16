@@ -98,6 +98,7 @@ jobs:
           curl -fs http://127.0.0.1:8000/ | grep -i "<html"
           curl -fs -X POST http://127.0.0.1:8000/auth/token -H 'content-type: application/json' \
             -d '{"secret":"ci-secret","client_name":"ci"}' | grep access_token
+          docker run --rm assistant python /app/scripts/generate_vapid_keys.py | grep VAPID_PRIVATE_KEY
       - name: Logs
         if: failure()
         run: docker logs assistant
