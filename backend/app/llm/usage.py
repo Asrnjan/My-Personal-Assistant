@@ -136,6 +136,9 @@ class BudgetGuard:
         self._clock = clock
         self._on_exceeded = on_exceeded
 
+    def set_on_exceeded(self, callback: Callable[[float, float], None]) -> None:
+        self._on_exceeded = callback
+
     def month_spend(self) -> float:
         return self._ledger.totals_since(start_of_month(self._clock(), self._tz)).cost_usd
 

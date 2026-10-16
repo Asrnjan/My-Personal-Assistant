@@ -156,9 +156,9 @@ def test_gmail_send_reply_keeps_thread(mock_http: respx.MockRouter, gmail: Gmail
         return_value=httpx.Response(200, json=fixture("google/gmail_m1.json"))
     )
     send = mock_http.post(f"{GMAIL}/messages/send").mock(
-        return_value=httpx.Response(200, json={"id": "sent-1"})
+        return_value=httpx.Response(200, json={"id": "sent-1", "threadId": "t1"})
     )
-    msg_id = gmail.send(
+    sent = gmail.send(
         OutboundEmail(
             to=("rahul@example.com",),
             subject="Delegated: Vendor contract review",
@@ -167,7 +167,7 @@ def test_gmail_send_reply_keeps_thread(mock_http: respx.MockRouter, gmail: Gmail
             reply_to_message_id="m1",
         )
     )
-    assert msg_id == "sent-1"
+    assert sent.message_id == "sent-1" and sent.thread_id == "t1"
     payload = json.loads(send.calls[0].request.content)
     assert payload["threadId"] == "t1"
     import base64
@@ -182,6 +182,9 @@ def test_gmail_send_new_message(mock_http: respx.MockRouter, gmail: GmailAdapter
     send = mock_http.post(f"{GMAIL}/messages/send").mock(
         return_value=httpx.Response(200, json={"id": "sent-2"})
     )
-    gmail.send(OutboundEmail(to=("a@example.com",), subject="Hi", text="t", cc=("b@example.com",)))
+    sent = gmail.send(
+        OutboundEmail(to=("a@example.com",), subject="Hi", text="t", cc=("b@example.com",))
+    )
+    assert sent.thread_id is None
     payload = json.loads(send.calls[0].request.content)
     assert "threadId" not in payload

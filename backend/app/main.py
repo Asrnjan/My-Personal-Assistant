@@ -13,20 +13,32 @@ from app import __version__
 from app.api import (
     auth,
     routes_brief,
+    routes_converse,
     routes_health,
     routes_items,
     routes_oauth,
+    routes_people,
     routes_usage,
+    ws,
 )
 from app.clock import Clock, utc_now
 from app.config import Settings, get_settings, load_app_config
 from app.db.session import make_engine, make_session_factory
+from app.engine.actions import ActionService
+from app.engine.approval import load_policy
 from app.engine.briefing import Briefer
 from app.engine.contacts import load_contacts, seed_delegates
+from app.engine.conversation import ConversationAgent
+from app.engine.delegation import DelegationService
+from app.engine.followup import FollowUpService
+from app.engine.learning import LearningService
+from app.engine.notices import Notices
 from app.engine.priority import PriorityEngine
 from app.engine.rubric import load_rubric
 from app.engine.sync import SyncService
 from app.events import EventBus
+from app.integrations.notify.base import Notifier
+from app.integrations.notify.registry import build_notifiers
 from app.integrations.oauth import OAuthManager, TokenStore, google_provider, microsoft_provider
 from app.integrations.registry import Adapters, build_adapters
 from app.llm.client import AnthropicSender, LLMClient, MessageSender
@@ -43,6 +55,7 @@ def create_app(
     *,
     llm_sender: MessageSender | None = None,
     adapters_factory: Callable[[], Adapters] | None = None,
+    notifiers_factory: Callable[[Adapters], list[Notifier]] | None = None,
     clock: Clock = utc_now,
 ) -> FastAPI:
     settings = settings or get_settings()
@@ -91,9 +104,31 @@ def create_app(
         priority,
         clock,
     )
-    briefer = Briefer(session_factory, app_config, clock)
+    adapters = adapters_factory or (lambda: build_adapters(settings, app_config, oauth))
+    notifiers = notifiers_factory or (lambda built: build_notifiers(settings, app_config, built))
+    policy = load_policy(settings.approval_policy_path)
+    tz = app_config.tz
     bus = EventBus()
-    jobs = AssistantJobs(sync_service, briefer, bus, session_factory)
+    notices = Notices(bus, adapters, notifiers)
+
+    def budget_exceeded(_spend: float, cap: float) -> None:
+        notices.tell(
+            f"I've reached this month's AI budget of {cap:.0f} dollars, so I'm prioritizing "
+            "with rules only until next month."
+        )
+
+    budget.set_on_exceeded(budget_exceeded)
+    briefer = Briefer(session_factory, app_config, clock)
+    learning = LearningService(session_factory, clock)
+    delegation = DelegationService(llm, adapters, notifiers, tz, clock)
+    actions = ActionService(session_factory, delegation, policy, tz, clock, learning.on_decision)
+    followups = FollowUpService(
+        session_factory, llm, adapters, notifiers, policy, notices, tz, clock
+    )
+    agent = ConversationAgent(
+        session_factory, llm, actions, briefer, delegation, learning, policy, rubric, tz, clock
+    )
+    jobs = AssistantJobs(sync_service, briefer, bus, session_factory, followups, actions)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -128,10 +163,22 @@ def create_app(
     app.state.briefer = briefer
     app.state.events = bus
     app.state.jobs = jobs
+    app.state.adapters_factory = adapters
+    app.state.notifiers_factory = notifiers
+    app.state.policy = policy
+    app.state.notices = notices
+    app.state.learning = learning
+    app.state.delegation = delegation
+    app.state.actions = actions
+    app.state.followups = followups
+    app.state.agent = agent
     app.include_router(routes_health.router)
     app.include_router(auth.router)
     app.include_router(routes_usage.router)
     app.include_router(routes_oauth.router)
     app.include_router(routes_items.router)
     app.include_router(routes_brief.router)
+    app.include_router(routes_converse.router)
+    app.include_router(routes_people.router)
+    app.include_router(ws.router)
     return app

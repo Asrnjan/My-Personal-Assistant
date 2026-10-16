@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.domain.enums import Source
-from app.integrations.base import EmailAdapter, EmailMessage, OutboundEmail
+from app.integrations.base import EmailAdapter, EmailMessage, OutboundEmail, SentEmail
 from app.integrations.http import HttpClient
 from app.integrations.mime import b64url, bare_address, build_mime
 
@@ -51,7 +51,7 @@ class GmailAdapter(EmailAdapter):
                 replies.append(msg)
         return replies
 
-    def send(self, message: OutboundEmail) -> str:
+    def send(self, message: OutboundEmail) -> SentEmail:
         mime = build_mime(message)
         payload: dict[str, Any] = {}
         if message.reply_to_message_id:
@@ -63,7 +63,8 @@ class GmailAdapter(EmailAdapter):
             payload["threadId"] = original.get("threadId")
         payload["raw"] = b64url(mime.as_bytes())
         sent = self._http.send_json("POST", "/messages/send", payload)
-        return str(sent["id"])
+        thread = sent.get("threadId")
+        return SentEmail(str(sent["id"]), str(thread) if thread else None)
 
     def _get_metadata(self, message_id: str) -> dict[str, Any]:
         result: dict[str, Any] = self._http.get_json(

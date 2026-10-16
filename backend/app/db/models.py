@@ -25,6 +25,8 @@ from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import DeclarativeBase, Mapped, Mapper, mapped_column, relationship
 
 from app.domain.enums import (
+    ActionKind,
+    ActionStatus,
     Actor,
     ApprovedVia,
     DecisionAction,
@@ -115,6 +117,8 @@ class ItemRow(TimestampMixin, Base):
     scored_at: Mapped[datetime | None]
     # Fingerprint of this item when the CEO last heard about it as a P1 (alert or brief).
     alerted_hash: Mapped[str | None] = mapped_column(String(64))
+    # A deferred item reopens once this passes.
+    deferred_until: Mapped[datetime | None]
 
     decisions: Mapped[list[DecisionRow]] = relationship(back_populates="item")
 
@@ -168,6 +172,11 @@ class FollowUpRow(TimestampMixin, Base):
     state: Mapped[FollowUpState] = mapped_column(
         _enum(FollowUpState, "followup_state"), default=FollowUpState.PENDING
     )
+    # Where the delegation went, per channel: {"email": {"thread_id": ...}, "telegram": {...}}.
+    refs: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # Provider ids of replies already classified, so each is read once.
+    seen_replies: Mapped[list[str]] = mapped_column(JSON, default=list)
+    sent_at: Mapped[datetime | None]
 
     decision: Mapped[DecisionRow] = relationship(back_populates="followups")
 
@@ -284,3 +293,36 @@ class BriefRow(Base):
     text: Mapped[str] = mapped_column(Text)
     data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
+
+
+class PendingActionRow(Base):
+    """An action proposed to the CEO, waiting for confirmation (or resolved)."""
+
+    __tablename__ = "pending_actions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    conversation_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    kind: Mapped[ActionKind] = mapped_column(_enum(ActionKind, "action_kind"))
+    item_id: Mapped[str] = mapped_column(ForeignKey("items.id"))
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    readback: Mapped[str] = mapped_column(Text)
+    status: Mapped[ActionStatus] = mapped_column(
+        _enum(ActionStatus, "action_status"), default=ActionStatus.PENDING, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    resolved_at: Mapped[datetime | None]
+    decision_id: Mapped[str | None] = mapped_column(ForeignKey("decisions.id"))
+    result: Mapped[str | None] = mapped_column(Text)
+
+
+class ConversationRow(Base):
+    """Dialogue state: recent turns, what "the second one" refers to, what awaits a yes."""
+
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    history: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    last_listed: Mapped[list[str]] = mapped_column(JSON, default=list)
+    awaiting: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow)

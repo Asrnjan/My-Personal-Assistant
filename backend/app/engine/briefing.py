@@ -21,8 +21,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.clock import Clock
 from app.config import AppConfig
-from app.db.models import DecisionRow, DelegateRow, FollowUpRow, ItemRow
+from app.db.models import DecisionRow, FollowUpRow, ItemRow
 from app.domain.enums import FollowUpState, ItemKind, ItemStatus, PriorityBand
+from app.engine.contacts import all_delegates, display_names
 
 MAX_TITLE_WORDS = 8
 
@@ -212,13 +213,7 @@ class Briefer:
 
     @staticmethod
     def _names(s: Session) -> dict[str, str]:
-        """Delegate id → first name, or full name when first names clash."""
-        rows = list(s.scalars(select(DelegateRow)))
-        firsts = [r.full_name.split()[0] if r.full_name.split() else r.id for r in rows]
-        return {
-            r.id: first if firsts.count(first) == 1 else r.full_name
-            for r, first in zip(rows, firsts, strict=True)
-        }
+        return display_names(all_delegates(s))
 
     def _item(
         self, row: ItemRow, suggested: Suggestion, names: dict[str, str] | None = None

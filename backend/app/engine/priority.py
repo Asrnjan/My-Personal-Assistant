@@ -23,10 +23,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.clock import Clock, utc_now
-from app.db.models import ItemRow, LearningSignalRow
+from app.db.models import ItemRow
 from app.domain.delegate import Delegate
 from app.domain.enums import ItemKind, ItemStatus, PriorityBand
 from app.engine.contacts import all_delegates
+from app.engine.learning import preferences_block
 from app.engine.rubric import CRITERIA, HardRule, Rubric
 from app.llm.client import LLMClient, Task
 from app.llm.errors import BudgetExceededError, LLMError
@@ -247,14 +248,7 @@ class PriorityEngine:
             if not rows:
                 return report
             delegates = all_delegates(s)
-            preferences = [
-                r.rule_text
-                for r in s.scalars(
-                    select(LearningSignalRow)
-                    .where(LearningSignalRow.active.is_(True))
-                    .order_by(LearningSignalRow.created_at)
-                )
-            ]
+            preferences = preferences_block(s)
             pre = {r.id: prescore(r, self._rubric, delegates, now) for r in rows}
             results = self._score(rows, pre, delegates, preferences, report)
             valid_ids = {d.id for d in delegates}

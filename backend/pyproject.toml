@@ -19,6 +19,8 @@ dependencies = [
   "httpx>=0.27,<1",
   "cryptography>=43",
   "apscheduler>=3.10,<4",
+  "rapidfuzz>=3.9,<4",
+  "jellyfish>=1.0,<2",
 ]
 
 [project.optional-dependencies]
@@ -43,7 +45,8 @@ select = ["E", "F", "W", "I", "B", "UP", "N", "S", "SIM", "RUF"]
 ignore = []
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106"]
+# F811: test modules import shared fixtures that test arguments then shadow.
+"tests/**" = ["S101", "S105", "S106", "F811"]
 
 [tool.mypy]
 strict = true

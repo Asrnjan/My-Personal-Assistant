@@ -22,6 +22,7 @@ CONFIG_DIR = REPO_ROOT / "config"
 DEFAULT_CONFIG_PATH = CONFIG_DIR / "config.example.yaml"
 DEFAULT_RUBRIC_PATH = CONFIG_DIR / "rubric.example.yaml"
 DEFAULT_CONTACTS_PATH = CONFIG_DIR / "contacts.example.yaml"
+DEFAULT_POLICY_PATH = CONFIG_DIR / "approval_policy.example.yaml"
 
 
 class _Strict(BaseModel):
@@ -162,6 +163,7 @@ class Settings(BaseSettings):
     config_path: Path = DEFAULT_CONFIG_PATH
     rubric_path: Path = DEFAULT_RUBRIC_PATH
     contacts_path: Path = DEFAULT_CONTACTS_PATH
+    approval_policy_path: Path = DEFAULT_POLICY_PATH
     log_level: str = "INFO"
     # Run the in-process scheduler; set false when cron or GitHub Actions drives it instead.
     scheduler_enabled: bool = True
@@ -170,6 +172,8 @@ class Settings(BaseSettings):
     fernet_key: SecretStr = SecretStr("")
     # Base URL the OAuth providers redirect back to, e.g. https://assistant.example.com
     public_base_url: str = "http://127.0.0.1:8000"
+    # The CEO's own address, for notices sent by email (e.g. a channel failed).
+    ceo_email: str = ""
 
     google_client_id: str = ""
     google_client_secret: SecretStr = SecretStr("")

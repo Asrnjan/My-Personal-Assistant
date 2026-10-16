@@ -117,3 +117,49 @@ def echo_scores(score: int = 50, band: str = "P2_delegate", confidence: float = 
         return fake_message({"scores": scores}, model=params["model"])
 
     return respond
+
+
+def offline_responder(score: int = 50, band: str = "P2_delegate") -> Responder:
+    """Answers every kind of request the backend makes, without a network.
+
+    Scoring prompts get :func:`echo_scores`, delegation briefs a short brief
+    built from the item title, acknowledgement checks a keyword verdict, and
+    conversation turns a polite note that free-form requests need Claude.
+    Used by the offline demo and by tests that don't script the model.
+    """
+    scores = echo_scores(score=score, band=band)
+
+    def respond(params: dict[str, Any]) -> Message:
+        system = " ".join(b.get("text", "") for b in params.get("system", []))
+        first = params["messages"][0]["content"]
+        user = first if isinstance(first, str) else json.dumps(first)
+        model = params["model"]
+        if "delegation briefs" in system:
+            title = re.search(r"Title: (.*)", user)
+            subject = (title.group(1) if title else "A task for you").strip()[:80]
+            return fake_message(
+                {
+                    "subject": subject,
+                    "task_summary": f"Please take over {subject}.",
+                    "why_it_matters": "It needs an owner this week.",
+                    "expected_outcome": "It's done and you've let me know.",
+                    "deadline": None,
+                    "context_links": [],
+                    "handoff_type": "full_ownership",
+                },
+                model=model,
+            )
+        if "classify them" in system:
+            accepted = bool(re.search(r"\b(accept(ed)?|ok(ay)?|on it|will do)\b", user, re.I))
+            return fake_message(
+                {"acknowledged": accepted, "has_question": "?" in user, "confidence": 0.9},
+                model=model,
+            )
+        if params.get("tools"):
+            return fake_message(
+                "I'm running offline, so I can only handle brief me, yes, cancel and skip.",
+                model=model,
+            )
+        return scores(params)
+
+    return respond

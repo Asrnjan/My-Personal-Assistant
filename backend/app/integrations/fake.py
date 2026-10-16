@@ -5,8 +5,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from datetime import datetime
+from typing import Any
 
-from app.domain.enums import Source
+from app.domain.delegate import Delegate
+from app.domain.enums import Channel, Source
 from app.integrations.base import (
     CalendarAdapter,
     CalendarEvent,
@@ -14,10 +16,12 @@ from app.integrations.base import (
     EmailMessage,
     ExternalTask,
     OutboundEmail,
+    SentEmail,
     SyncResult,
     TaskAdapter,
 )
 from app.integrations.http import IntegrationError
+from app.integrations.notify.base import AckEvent, DelegationMessage, Delivery, Notifier
 
 
 @dataclass
@@ -79,11 +83,12 @@ class FakeMail(EmailAdapter):
             if m.received_at is None or m.received_at > since
         ]
 
-    def send(self, message: OutboundEmail) -> str:
+    def send(self, message: OutboundEmail) -> SentEmail:
         if self.fail_with:
             raise self.fail_with
         self.sent.append(message)
-        return f"sent-{len(self.sent)}"
+        n = len(self.sent)
+        return SentEmail(f"sent-{n}", f"thread-{n}")
 
 
 @dataclass
@@ -116,3 +121,47 @@ class FakeTasks(TaskAdapter):
         self.closed.append(task_id)
         if task_id in self.tasks:
             self.tasks[task_id] = replace(self.tasks[task_id], done=True)
+
+
+@dataclass
+class FakeNotifier(Notifier):
+    """Records what it would send. ``acks`` are returned once by ``poll_ack``."""
+
+    channel: Channel = Channel.TELEGRAM
+    sent: list[DelegationMessage] = field(default_factory=list)
+    nudges: list[tuple[str, str]] = field(default_factory=list)
+    ceo_messages: list[str] = field(default_factory=list)
+    acks: list[AckEvent] = field(default_factory=list)
+    reach_ceo: bool = True
+    fail_with: Exception | None = None
+
+    def can_reach(self, delegate: Delegate) -> bool:
+        if self.channel == Channel.TELEGRAM:
+            return bool(delegate.telegram_chat_id)
+        if self.channel == Channel.SLACK:
+            return bool(delegate.slack_user_id)
+        if self.channel == Channel.TEAMS:
+            return bool(delegate.teams_webhook)
+        return bool(delegate.email)
+
+    def send_delegation(self, message: DelegationMessage) -> Delivery:
+        if self.fail_with:
+            raise self.fail_with
+        self.sent.append(message)
+        return Delivery(self.channel, {"message_id": f"{self.channel.value}-{len(self.sent)}"})
+
+    def send_nudge(self, delegate: Delegate, text: str, ref: dict[str, Any]) -> None:
+        if self.fail_with:
+            raise self.fail_with
+        self.nudges.append((delegate.id, text))
+
+    def notify_ceo(self, text: str) -> bool:
+        if not self.reach_ceo:
+            return False
+        self.ceo_messages.append(text)
+        return True
+
+    def poll_ack(self, ref: dict[str, Any], seen: set[str]) -> list[AckEvent]:
+        found = [a for a in self.acks if a.reply_id not in seen]
+        self.acks = []
+        return found

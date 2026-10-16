@@ -102,7 +102,7 @@ def test_build_scheduler_jobs(api: TestClient) -> None:
     config = AppConfig.model_validate({"brief_times": {"morning": "07:45", "evening": "19:00"}})
     scheduler = build_scheduler(jobs, config)
     found = {j.id: j for j in scheduler.get_jobs()}
-    assert set(found) == {"morning_brief", "evening_wrapup", "sync"}
+    assert set(found) == {"morning_brief", "evening_wrapup", "sync", "followups"}
     morning = {f.name: str(f) for f in found["morning_brief"].trigger.fields}
     assert morning["hour"] == "7" and morning["minute"] == "45"
     assert str(found["morning_brief"].trigger.timezone) == "Asia/Kolkata"
@@ -111,7 +111,7 @@ def test_build_scheduler_jobs(api: TestClient) -> None:
     quiet = build_scheduler(
         jobs, AppConfig.model_validate({"scheduler": {"sync_interval_minutes": 0}})
     )
-    assert {j.id for j in quiet.get_jobs()} == {"morning_brief", "evening_wrapup"}
+    assert {j.id for j in quiet.get_jobs()} == {"morning_brief", "evening_wrapup", "followups"}
     assert AppConfig().brief_times.morning == time(8, 0)
 
 

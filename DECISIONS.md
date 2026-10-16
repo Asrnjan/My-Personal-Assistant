@@ -150,3 +150,51 @@ Each entry records a decision, the alternatives considered, and the reason.
 ## 2026-10-16: Scheduler settings
 - **Decision:** APScheduler `BackgroundScheduler` in the configured timezone, with coalescing, one instance per job and a 15-minute misfire grace. `SCHEDULER_ENABLED=false` turns it off, and `POST /sync` plus `POST /brief/deliver` let cron or GitHub Actions drive the same jobs. A lock stops a scheduled sync and a manual `/sync` from ingesting at the same time.
 - **Reason:** the spec asks for APScheduler plus a documented cron alternative.
+
+## 2026-10-16: Common dialogue turns are handled in code
+- **Decision:** "brief me", plain yes/no, "go ahead with all" and "skip the second one" are matched with patterns and handled without a model call; everything else goes to Sonnet with tools.
+- **Reason:** they are the most frequent voice turns, they must be instant and exact, and they keep working when the budget cap is hit.
+
+## 2026-10-16: The CEO's own yes is checked in code
+- **Decision:** `confirm_pending_action` only runs when the CEO's current utterance contains an affirmation, and never on an action proposed in the same turn. Pending actions exist only through tool calls or brief suggestions.
+- **Reason:** defence in depth against prompt injection; a model fooled by email content still cannot execute anything.
+
+## 2026-10-16: Brief suggestions become pending actions
+- **Decision:** "brief me" stages the brief's delegations, declines and drops as pending actions, so "yes" right after it executes them; the brief is their read-back. P3 tasks (not meetings) are staged as drops.
+- **Reason:** the brief ends with "Shall I go ahead?", which must mean something.
+
+## 2026-10-16: "Go ahead with all" reads back once
+- **Decision:** if the conversation already heard the full set of pending actions (a brief or a summary), "go ahead with all" executes them; otherwise it reads back a numbered summary and waits for one yes.
+- **Reason:** matches the spec's "after one read-back summary" without repeating it.
+
+## 2026-10-16: Financial requests and delegation
+- **Decision:** requests that ask the assistant itself to pay, wire, buy, refund, approve invoices or delete data are refused before any model call (patterns in `approval_policy.yaml`). Asking a delegate to handle such work ("Delegate paying the invoice to Meera") is allowed, because the assistant only sends a brief.
+- **Reason:** the never-list is about the assistant moving money or deleting data, while delegating finance work to the finance owner is the core use case.
+
+## 2026-10-16: Name resolution rules
+- **Decision:** an exact full name or alias wins outright. Otherwise rapidfuzz WRatio plus a soundex/metaphone match per word scores each delegate; matches at 80 or more within 6 points of the best are ties, broken by the delegate whose ownership areas fit the item, else the CEO is asked. Addresses are accepted only if they belong to a contact.
+- **Reason:** handles speech-to-text errors ("Raul" → Rahul) while never guessing between two real people.
+
+## 2026-10-16: Delegated deadlines
+- **Decision:** a deadline given as a date means 18:00 that day in the configured timezone; without one, the item's own due date is used.
+- **Reason:** "due Monday" means by the end of Monday's working day.
+
+## 2026-10-16: Email acknowledgement tracking
+- **Decision:** `EmailAdapter.send` now returns the message and thread ids (Outlook looks the sent message up among recent sent items, since Graph returns no ids). Delegation subjects carry a short `[ref xxxxxxxx]`. Only replies from the delegate's own address count; a reply that isn't a clear yes is passed to the CEO as a question.
+- **Reason:** replies are matched by thread, and strangers on the thread can't close a follow-up.
+
+## 2026-10-16: Nudges
+- **Decision:** one reminder per delegation, 24 hours before the deadline, on every channel the brief went out on, if nobody acknowledged. The policy key `nudge_delegate` is `auto` by default; set to `confirm` the CEO is told instead, `never` turns it off. Unacknowledged delegations past their deadline become `overdue` and the CEO is told.
+- **Reason:** the spec's nudge rule, with the approval policy deciding how automatic it is.
+
+## 2026-10-16: Deleting a delegate keeps history
+- **Decision:** `DELETE /delegates/{id}` clears the delegate from suggestions and past decisions, then deletes the row; decisions keep their brief and the audit log keeps the id.
+- **Reason:** people leave; their past delegations must not block removing them.
+
+## 2026-10-16: Learning signals
+- **Decision:** explicit rules are stored verbatim. Overrides are stored as plain sentences ("The CEO delegated X from P1 to P2") with the requester and direction; when two or more go the same way for one requester, a summary line is added. The block holds at most 20 rules and the 15 latest overrides, and is part of the cached system prompt for scoring and conversation.
+- **Reason:** deterministic and cheap, and the model reads plain sentences well.
+
+## 2026-10-16: Deferred items
+- **Decision:** deferring sets status `deferred` with a date; the next sync after 08:00 that day reopens it for re-scoring.
+- **Reason:** sync never reopens items the CEO decided on, so deferral needs its own way back.

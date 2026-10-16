@@ -77,3 +77,20 @@ class SignalKind(StrEnum):
     BAND_OVERRIDE = "band_override"
     DELEGATE_OVERRIDE = "delegate_override"
     RULE = "rule"
+
+
+class ActionKind(StrEnum):
+    """Actions the CEO can approve. Each maps to an approval-policy key."""
+
+    DELEGATE = "delegate"
+    DECLINE_MEETING = "decline_meeting"
+    DEFER = "defer"
+    CLOSE_TASK = "close_task"
+    DROP = "drop"
+
+
+class ActionStatus(StrEnum):
+    PENDING = "pending"
+    EXECUTED = "executed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"

@@ -1,0 +1,37 @@
+# Copy to config/approval_policy.yaml and edit.
+# auto:    done without asking.
+# confirm: the full action is read back and waits for "yes", "go ahead", a tap or a Telegram reply.
+# never:   refused; the CEO must do it personally.
+auto:
+  - close_done_at_source # a task finished at its source is closed here too
+  - sync_status          # statuses pulled from calendars and task tools
+  - nudge_delegate       # one reminder 24h before the deadline if nobody acknowledged
+  - set_preference       # "always accept meetings from Meera"
+confirm:
+  - delegate
+  - decline_meeting
+  - forward_meeting
+  - reassign_task
+  - send_message
+  - close_task
+  - defer
+  - drop
+never:
+  - payment
+  - purchase
+  - invoice_payment
+  - delete_data
+
+# Requests from the CEO that match any of these (case-insensitive regular expressions) are
+# refused before anything else happens. Handing such work to a delegate is still allowed.
+never_patterns:
+  - '\b(pay|pays|paying|repay|remit|wire)\b'
+  - '\btransfer\b.*\b(money|funds|payment|amount|salary)\b'
+  - '\b(purchase|buy|buying)\b'
+  - '\b(approve|settle|process|clear)\b.*\b(invoice|payment|bill|expense|reimbursement)s?\b'
+  - '\brefund\b'
+  - '\b(delete|erase|wipe|purge)\b'
+
+refusal: >-
+  I can't handle payments, purchases, invoices or deleting data.
+  You'll need to do that one yourself.

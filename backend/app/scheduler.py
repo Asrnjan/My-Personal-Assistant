@@ -19,11 +19,16 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import AppConfig
 from app.db.models import BriefRow
+from app.engine.actions import ActionService
 from app.engine.briefing import Brief, Briefer, BriefKind
+from app.engine.followup import FollowUpReport, FollowUpService
 from app.engine.sync import SyncOutcome, SyncService
 from app.events import Event, EventBus
 
 log = logging.getLogger(__name__)
+
+# Acknowledgement checks, nudges and overdue marking.
+FOLLOWUP_MINUTES = 30
 
 
 @dataclass
@@ -39,11 +44,15 @@ class AssistantJobs:
         briefer: Briefer,
         bus: EventBus,
         session_factory: sessionmaker[Session],
+        followups: FollowUpService | None = None,
+        actions: ActionService | None = None,
     ) -> None:
         self._sync = sync
         self._briefer = briefer
         self._bus = bus
         self._sessions = session_factory
+        self._followups = followups
+        self._actions = actions
         # The scheduler thread and a manual /sync must not ingest at the same time.
         self._sync_lock = threading.Lock()
 
@@ -82,6 +91,8 @@ class AssistantJobs:
 
     def sync_and_alert(self) -> SyncAndAlert:
         with self._sync_lock:
+            if self._actions is not None:
+                self._actions.reopen_deferred()
             outcome = self._sync.run()
             alert = self._briefer.alerts()
         if alert is not None:
@@ -94,6 +105,17 @@ class AssistantJobs:
             self.sync_and_alert()
         except Exception:
             log.exception("background sync failed")
+
+    def check_followups(self) -> FollowUpReport | None:
+        if self._followups is None:
+            return None
+        return self._followups.run()
+
+    def background_followups(self) -> None:
+        try:
+            self.check_followups()
+        except Exception:
+            log.exception("follow-up check failed")
 
 
 def build_scheduler(jobs: AssistantJobs, app_config: AppConfig) -> BackgroundScheduler:
@@ -112,4 +134,9 @@ def build_scheduler(jobs: AssistantJobs, app_config: AppConfig) -> BackgroundSch
         scheduler.add_job(
             jobs.background_sync, IntervalTrigger(minutes=minutes, timezone=tz), id="sync"
         )
+    scheduler.add_job(
+        jobs.background_followups,
+        IntervalTrigger(minutes=FOLLOWUP_MINUTES, timezone=tz),
+        id="followups",
+    )
     return scheduler

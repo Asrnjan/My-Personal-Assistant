@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-from app.integrations.base import OutboundEmail
+from app.integrations.base import OutboundEmail, SentEmail
 from app.integrations.http import HttpClient, IntegrationError
 from app.integrations.microsoft.calendar import OutlookCalendarAdapter
 from app.integrations.microsoft.graph import BASE_URL
@@ -139,12 +139,31 @@ def test_mail_send_and_reply(mock_http: respx.MockRouter, mail: OutlookMailAdapt
     reply = mock_http.post(f"{BASE_URL}/me/messages/msg-1/reply").mock(
         return_value=httpx.Response(202)
     )
+    sent_items = mock_http.get(f"{BASE_URL}/me/mailFolders/SentItems/messages").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {"id": "other", "conversationId": "c0", "subject": "Older"},
+                        {"id": "s1", "conversationId": "conv-9", "subject": "S"},
+                    ]
+                },
+            ),
+            httpx.Response(200, json={"value": []}),
+            httpx.Response(404, json={}),
+        ]
+    )
     out = OutboundEmail(to=("rahul@example.com",), subject="S", text="plain", html="<b>x</b>")
-    assert mail.send(out) == ""
+    assert mail.send(out) == SentEmail("s1", "conv-9")
+    assert sent_items.calls[0].request.url.params["$orderby"] == "sentDateTime desc"
     body = json.loads(send.calls[0].request.content)
     assert body["message"]["body"] == {"contentType": "HTML", "content": "<b>x</b>"}
     assert body["saveToSentItems"] is True
-    mail.send(
+    assert mail.send(
         OutboundEmail(to=("r@example.com",), subject="S", text="plain", reply_to_message_id="msg-1")
+    ) == SentEmail(None, None)
+    assert mail.send(OutboundEmail(to=("r@example.com",), subject="S", text="x")) == SentEmail(
+        None, None
     )
     assert json.loads(reply.calls[0].request.content)["message"]["body"]["contentType"] == "Text"

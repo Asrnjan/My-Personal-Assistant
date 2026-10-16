@@ -79,6 +79,14 @@ class OutboundEmail:
     reply_to_message_id: str | None = None
 
 
+@dataclass(frozen=True)
+class SentEmail:
+    """Ids of a sent message; ``thread_id`` is what replies are tracked by."""
+
+    message_id: str | None
+    thread_id: str | None
+
+
 @dataclass
 class SyncResult(Generic[T]):
     """A page of changes plus the cursor to resume from next time.
@@ -122,8 +130,8 @@ class EmailAdapter(ABC):
         """Messages in a thread after ``since`` (used to detect acknowledgements)."""
 
     @abstractmethod
-    def send(self, message: OutboundEmail) -> str:
-        """Send from the CEO's account; returns the provider's message id."""
+    def send(self, message: OutboundEmail) -> SentEmail:
+        """Send from the CEO's account; returns the provider's ids for the message."""
 
 
 class TaskAdapter(ABC):

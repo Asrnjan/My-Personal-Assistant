@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
 from app.domain.enums import Source
-from app.integrations.base import EmailAdapter, EmailMessage, OutboundEmail
-from app.integrations.http import HttpClient
+from app.integrations.base import EmailAdapter, EmailMessage, OutboundEmail, SentEmail
+from app.integrations.http import HttpClient, IntegrationError
 from app.integrations.microsoft.graph import iterate_pages
 from app.integrations.mime import parse_iso
+
+log = logging.getLogger(__name__)
 
 _SELECT = "id,conversationId,subject,from,toRecipients,bodyPreview,receivedDateTime,webLink,flag"
 
@@ -52,7 +55,7 @@ class OutlookMailAdapter(EmailAdapter):
         ]
         return [m for m in messages if not self._ceo or m.sender != self._ceo]
 
-    def send(self, message: OutboundEmail) -> str:
+    def send(self, message: OutboundEmail) -> SentEmail:
         body: dict[str, Any] = {
             "subject": message.subject,
             "body": {
@@ -68,7 +71,27 @@ class OutlookMailAdapter(EmailAdapter):
             )
         else:
             self._http.send_json("POST", "/me/sendMail", {"message": body, "saveToSentItems": True})
-        return ""  # Graph's send endpoints return 202 with no message id
+        return self._find_sent(message.subject)
+
+    def _find_sent(self, subject: str) -> SentEmail:
+        """Graph's send endpoints return 202 with no ids, so look the message up
+        among the most recent sent items. Best effort: ids are ``None`` if not found."""
+        try:
+            page = self._http.get_json(
+                "/me/mailFolders/SentItems/messages",
+                params={
+                    "$top": "10",
+                    "$orderby": "sentDateTime desc",
+                    "$select": "id,conversationId,subject",
+                },
+            )
+        except IntegrationError as exc:
+            log.warning("could not look up the sent message: %s", exc)
+            return SentEmail(None, None)
+        for m in page.get("value", []):
+            if m.get("subject") == subject:
+                return SentEmail(m.get("id"), m.get("conversationId"))
+        return SentEmail(None, None)
 
 
 def _message(m: dict[str, Any]) -> EmailMessage:

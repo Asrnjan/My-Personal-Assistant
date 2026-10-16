@@ -49,3 +49,12 @@ def seed_delegates(session_factory: sessionmaker[Session], delegates: list[Deleg
 
 def all_delegates(session: Session) -> list[Delegate]:
     return [Delegate.model_validate(r) for r in session.scalars(select(DelegateRow))]
+
+
+def display_names(delegates: list[Delegate]) -> dict[str, str]:
+    """Delegate id → how to say their name: first name, or full name when first names clash."""
+    firsts = [d.full_name.split()[0] if d.full_name.split() else d.id for d in delegates]
+    return {
+        d.id: first if firsts.count(first) == 1 else d.full_name
+        for d, first in zip(delegates, firsts, strict=True)
+    }
