@@ -118,9 +118,13 @@ Each entry records a decision, the alternatives considered, and the reason.
 - **Decision:** a suggested delegate id not in the contacts list is replaced by the pre-score's ownership-area match for P2 items and cleared otherwise. Only P2 items keep a delegate.
 - **Reason:** the model must never route work to someone who isn't a known delegate.
 
-## 2026-10-16: Contacts seeding is insert-only
+## 2026-10-16: Contacts seeding is insert-only (replaced 2026-10-18)
 - **Decision:** at startup, delegates in `contacts.yaml` that are missing from the database are inserted; existing rows are left alone.
 - **Reason:** later milestones edit delegates through the API, and a restart must not overwrite those edits.
+
+## 2026-10-18: contacts.yaml wins on restart
+- **Decision:** at startup, every person listed in `contacts.yaml` is added or updated to match the file; people added only through the API are kept.
+- **Reason:** non-developers manage their team by editing the file and restarting; an edit that silently did nothing was the bigger surprise than overwriting an API edit.
 
 ## 2026-10-16: `POST /sync` scores after ingesting
 - **Decision:** the sync endpoint runs ingestion and then scores every open item whose `scored_at` is empty, and reports scored, escalated and rules-only counts.

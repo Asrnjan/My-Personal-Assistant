@@ -86,7 +86,7 @@ While the consent screen is in "Testing" mode Google expires refresh tokens afte
 - `config/approval_policy.yaml`: what may happen automatically, what needs your yes, and what is never done (payments, purchases, deleting data). The defaults ask before every delegation, decline or close.
 - `config/config.yaml`: timezone, brief times, which integrations are on, models, budget, wake word and voices.
 
-Restart the backend after editing them. New contacts are added on startup; existing ones are kept, so edit people through `PUT /delegates/{id}` or delete and re-add them.
+Restart the backend after editing them. On startup everyone in `contacts.yaml` is added or updated to match the file; people you added only through `POST /delegates` are kept.
 
 ## 8. Telegram (your chat with the assistant, and delegate notifications)
 

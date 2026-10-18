@@ -31,20 +31,27 @@ def load_contacts(path: Path) -> list[Delegate]:
 
 
 def seed_delegates(session_factory: sessionmaker[Session], delegates: list[Delegate]) -> int:
-    """Insert delegates from the file that are not in the database yet.
+    """Bring delegates in line with ``contacts.yaml``: add new people and update the
+    ones whose details in the file changed. Returns how many rows were added or changed.
 
-    Existing rows are left alone: once a delegate exists, the API is the
-    source of truth, so edits made there are not overwritten on restart.
+    The file wins for everyone it lists, so editing it and restarting is enough.
+    People added only through the API (not in the file) are left alone.
     """
-    added = 0
+    changed = 0
     with session_factory.begin() as s:
-        existing = set(s.scalars(select(DelegateRow.id)))
+        existing = {r.id: r for r in s.scalars(select(DelegateRow))}
         for d in delegates:
-            if d.id in existing:
+            values = d.model_dump(mode="json")
+            row = existing.get(d.id)
+            if row is None:
+                s.add(DelegateRow(**values))
+                changed += 1
                 continue
-            s.add(DelegateRow(**d.model_dump(mode="json")))
-            added += 1
-    return added
+            updates = {k: v for k, v in values.items() if getattr(row, k) != v}
+            for key, value in updates.items():
+                setattr(row, key, value)
+            changed += bool(updates)
+    return changed
 
 
 def all_delegates(session: Session) -> list[Delegate]:

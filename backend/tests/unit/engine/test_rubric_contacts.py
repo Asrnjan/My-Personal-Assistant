@@ -36,10 +36,16 @@ def test_contacts_load_and_seed(session_factory: sessionmaker[Session], tmp_path
     assert {c.id for c in contacts} == {"rahul", "rahul-m", "meera", "arjun"}
     assert seed_delegates(session_factory, contacts) == 4
     assert seed_delegates(session_factory, contacts) == 0
+    # Editing the file and restarting updates that person; nobody else changes.
+    edited = [
+        c.model_copy(update={"telegram_chat_id": "555"}) if c.id == "arjun" else c for c in contacts
+    ]
+    assert seed_delegates(session_factory, edited) == 1
     with session_factory() as s:
         loaded = {d.id: d for d in all_delegates(s)}
     assert loaded["rahul"].preferred_channels == ["email", "telegram"]
     assert loaded["meera"].ownership_areas[0] == "finance"
+    assert loaded["arjun"].telegram_chat_id == "555"
 
     assert load_contacts(tmp_path / "none.yaml") == []
     dupes = tmp_path / "d.yaml"
