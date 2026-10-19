@@ -58,6 +58,7 @@ class Harness:
     notifiers_enabled: list[Channel] = field(
         default_factory=lambda: [Channel.EMAIL, Channel.TELEGRAM, Channel.SLACK, Channel.TEAMS]
     )
+    adapters: Adapters = field(default_factory=Adapters)
 
     @property
     def sessions(self) -> sessionmaker[Session]:
@@ -136,7 +137,19 @@ def build_harness(
     with TestClient(app) as client:
         token = client.post("/auth/token", json={"secret": API_SECRET, "client_name": "t"}).json()
         client.headers["Authorization"] = f"Bearer {token['access_token']}"
-        harness = Harness(app, client, sender, clock, calendar, tasks, mail, telegram, slack, teams)
+        harness = Harness(
+            app,
+            client,
+            sender,
+            clock,
+            calendar,
+            tasks,
+            mail,
+            telegram,
+            slack,
+            teams,
+            adapters=adapters,
+        )
         holder["h"] = harness
         yield harness
     app.state.engine.dispose()

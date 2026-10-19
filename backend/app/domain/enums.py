@@ -87,6 +87,11 @@ class ActionKind(StrEnum):
     DEFER = "defer"
     CLOSE_TASK = "close_task"
     DROP = "drop"
+    # Not tied to an item: things the CEO asks for in conversation.
+    SEND_EMAIL = "send_email"
+    REPLY_EMAIL = "reply_email"
+    TEAMS_MESSAGE = "teams_message"
+    BOOK_MEETING = "book_meeting"
 
 
 class ActionStatus(StrEnum):

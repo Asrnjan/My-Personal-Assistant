@@ -1,7 +1,7 @@
 // Service worker: offline app shell, API network-first, Web Push.
 'use strict';
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL_CACHE = `cos-shell-${VERSION}`;
 const DATA_CACHE = `cos-data-${VERSION}`;
 const FONT_CACHE = `cos-fonts-${VERSION}`;

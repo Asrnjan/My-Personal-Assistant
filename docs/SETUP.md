@@ -48,15 +48,20 @@ Set `PUBLIC_BASE_URL` to the address the backend is reachable at (for example yo
 
 While the consent screen is in "Testing" mode Google expires refresh tokens after 7 days; publish the app (no review is needed for personal use with your own account) to keep the connection.
 
-## 3. Microsoft 365 (Outlook calendar and mail)
+## 3. Microsoft 365 (Outlook mail, calendar and Teams chats)
 
-1. Open https://entra.microsoft.com → **App registrations → New registration**.
-2. Name it, choose **Accounts in this organizational directory only** (or any directory), and add a **Web** redirect URI `<PUBLIC_BASE_URL>/oauth/microsoft/callback`.
-3. Copy **Application (client) ID** into `MS_CLIENT_ID` and **Directory (tenant) ID** into `MS_TENANT_ID` (or leave `common`).
-4. **Certificates & secrets → New client secret**: copy the value into `MS_CLIENT_SECRET`.
-5. **API permissions → Add → Microsoft Graph → Delegated**: `offline_access`, `User.Read`, `Calendars.ReadWrite`, `Mail.ReadWrite`, `Mail.Send`. Grant admin consent if your tenant requires it.
-6. In `config/config.yaml`, include `microsoft` under `adapters.calendar` and/or `adapters.email`.
-7. Connect the account with `GET /oauth/microsoft/start`, as for Google.
+You can do this whole section from the app: **Settings → Accounts → Outlook → Set up**. The app shows the redirect address to copy and has boxes for the three values below, so `.env` stays untouched.
+
+1. Open https://entra.microsoft.com and sign in with your work or school account → **App registrations → New registration**.
+2. Name it (for example "My assistant"), choose **Accounts in this organizational directory only**, and under **Redirect URI** pick **Web** and paste the address the app shows (`<PUBLIC_BASE_URL>/oauth/microsoft/callback`, e.g. `http://localhost:8000/oauth/microsoft/callback`). Register.
+3. On the app's **Overview** page copy **Application (client) ID** and **Directory (tenant) ID**.
+4. **Certificates & secrets → New client secret → Add**, then copy the **Value** (not the Secret ID) straight away; it is shown only once.
+5. **API permissions → Add a permission → Microsoft Graph → Delegated permissions**: `offline_access`, `User.Read`, `Calendars.ReadWrite`, `Mail.ReadWrite`, `Mail.Send`, and for Teams `Chat.ReadWrite` and `User.ReadBasic.All`. If your company requires it, press **Grant admin consent** (or ask your IT admin to).
+6. Back in the app, paste the client ID, the secret value and the tenant ID, press **Save keys**, then **Connect** next to Outlook and **Connect** next to Microsoft Teams. Sign in and accept.
+
+Using `.env` instead still works: `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_TENANT_ID`. Keys saved in the app win.
+
+Once connected you can ask, by voice or text: "Did Priya email me about the demo?", "Reply that Monday works", "Email Meera asking for the budget", "What's new on Teams?", "Tell Arjun on Teams I'm running late", "Book a budget review with Meera Monday at 3". Anything that sends or books is read back first and only happens after your "yes". If an account isn't connected yet, the app shows an **Allow** button for it.
 
 ## 4. Jira Cloud
 
@@ -109,9 +114,9 @@ The bot uses long polling, so it works without a public URL. If two copies of th
 
 Delegates accept by replying "accepted", "ok" or "on it" in the DM, or by reacting with ✅ or 👍. Anything else they write reaches you as a question.
 
-## 10. Microsoft Teams
+## 10. Microsoft Teams channel notices (optional)
 
-Teams uses incoming webhooks, which are free and need no app registration.
+To read and send your own Teams chats, connect Teams in section 3. This section is only for posting delegation notices into a Teams channel, using incoming webhooks, which are free and need no app registration.
 
 1. In the Teams channel you want, choose **⋯ → Workflows → Post to a channel when a webhook request is received** (or, on older tenants, **Connectors → Incoming Webhook**). Copy the URL.
 2. For notices to you, put a channel's URL in `TEAMS_WEBHOOK_URL`. For a delegate, put the URL of a channel they watch in their `teams_webhook`.

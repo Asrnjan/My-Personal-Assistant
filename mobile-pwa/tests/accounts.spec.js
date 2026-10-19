@@ -1,7 +1,7 @@
 'use strict';
 
 const { test, expect } = require('@playwright/test');
-const { setup, findCalls, accountsBody } = require('./helpers');
+const { setup, findCalls, accountsBody, converseReply } = require('./helpers');
 
 async function openSettings(page) {
   await page.getByRole('button', { name: 'Open settings' }).click();
@@ -90,4 +90,46 @@ test('warns when sign-in would return to a different address than this app', asy
   await page.goto('/');
   const dialog = await openSettings(page);
   await expect(dialog.locator('#accounts-note')).toContainText('Sign-in returns to http://localhost:8000');
+});
+
+test('when the assistant needs Teams, one tap asks for access', async ({ page }) => {
+  const { calls } = await setup(page, {
+    overrides: {
+      'POST /converse': () => ({ json: converseReply('Teams isn\'t connected yet.', { needs_account: ['teams'] }) }),
+      'GET /accounts': () => ({ json: accountsBody({ configured: ['microsoft'] }) }),
+      'POST /accounts/teams/connect': () => ({ json: { authorization_url: '/signed-in.html' } }),
+    },
+  });
+  await page.route('**/signed-in.html', (route) => route.fulfill({ contentType: 'text/html', body: '<h1>Microsoft sign-in</h1>' }));
+  await page.goto('/');
+  const input = page.getByLabel('Type a message');
+  await input.fill('Any new Teams messages?');
+  await input.press('Enter');
+  const prompt = page.getByRole('group', { name: 'Allow access' });
+  await expect(prompt).toBeVisible();
+  await prompt.getByRole('button', { name: 'Allow Microsoft Teams' }).click();
+  await expect(page.getByRole('heading', { name: 'Microsoft sign-in' })).toBeVisible();
+  expect(findCalls(calls, 'POST', '/accounts/teams/connect')).toHaveLength(1);
+});
+
+test('an account without its one-time setup opens Settings at the setup form', async ({ page }) => {
+  let reply = converseReply('Connect Outlook or Google.', { needs_account: ['outlook', 'google'] });
+  await setup(page, { overrides: { 'POST /converse': () => ({ json: reply }) } });
+  await page.goto('/');
+  const input = page.getByLabel('Type a message');
+  await input.fill('Search my mail');
+  await input.press('Enter');
+  const prompt = page.getByRole('group', { name: 'Allow access' });
+  await expect(prompt.getByRole('button')).toHaveText(['Allow Outlook', 'Allow Google']);
+  await prompt.getByRole('button', { name: 'Allow Outlook' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Settings' });
+  await expect(dialog.locator('#app-keys')).toHaveAttribute('open', '');
+  await expect(dialog.locator('#app-provider')).toHaveValue('microsoft');
+  await expect(page.locator('.toast')).toContainText('needs a one-time setup first');
+
+  await page.keyboard.press('Escape');
+  reply = converseReply('Done.');
+  await input.fill('thanks');
+  await input.press('Enter');
+  await expect(prompt).toBeHidden();
 });

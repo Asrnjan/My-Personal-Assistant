@@ -13,13 +13,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.clock import Clock, utc_now
 from app.config import AppConfig, Settings
 from app.db.models import SyncStateRow
-from app.integrations.base import CalendarAdapter, EmailAdapter, TaskAdapter
+from app.integrations.base import CalendarAdapter, ChatAdapter, EmailAdapter, TaskAdapter
 from app.integrations.google import calendar as gcal
 from app.integrations.google import gmail
 from app.integrations.http import HttpClient, Sleep
 from app.integrations.microsoft import calendar as mscal
 from app.integrations.microsoft import graph
 from app.integrations.microsoft import mail as msmail
+from app.integrations.microsoft import teams as msteams
 from app.integrations.oauth import OAuthManager
 from app.integrations.tasks import asana, clickup, jira
 
@@ -31,6 +32,8 @@ class Adapters:
     calendars: list[CalendarAdapter] = field(default_factory=list)
     mail: list[EmailAdapter] = field(default_factory=list)
     tasks: list[TaskAdapter] = field(default_factory=list)
+    # Teams chats, when the Teams account is connected.
+    chat: ChatAdapter | None = None
     # "<adapter>: <what is missing>" for adapters that are enabled but not set up.
     not_configured: list[str] = field(default_factory=list)
 
@@ -81,6 +84,13 @@ def build_adapters(
         out.calendars.append(mscal.OutlookCalendarAdapter(c))
     if "microsoft" in email and (c := oauth_client("microsoft", graph.BASE_URL)):
         out.mail.append(msmail.OutlookMailAdapter(c))
+    teams_granted = "chat.readwrite" in (oauth.granted_scopes("microsoft") if oauth else set())
+    if (
+        "microsoft" in connected
+        and teams_granted
+        and (c := oauth_client("microsoft", graph.BASE_URL))
+    ):
+        out.chat = msteams.TeamsChatAdapter(c)
 
     if "jira" in enabled.tasks:
         token = settings.jira_api_token.get_secret_value()

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import AppConfig, Settings
 from app.integrations.google.calendar import GoogleCalendarAdapter
 from app.integrations.http import AuthExpiredError
+from app.integrations.microsoft.teams import TeamsChatAdapter
 from app.integrations.oauth import (
     OAuthManager,
     TokenSet,
@@ -81,6 +82,10 @@ def test_everything_configured(session_factory: sessionmaker[Session]) -> None:
     assert [a.source.value for a in adapters.calendars] == ["gcal", "outlook"]
     assert [a.source.value for a in adapters.mail] == ["gmail", "outlook"]
     assert [a.source.value for a in adapters.tasks] == ["jira", "asana", "clickup"]
+    assert adapters.chat is None  # Teams wasn't granted
+
+    store.save("microsoft", TokenSet("m-at", "m-rt", None, "Mail.ReadWrite Chat.ReadWrite"))
+    assert isinstance(build_adapters(settings, ALL, manager).chat, TeamsChatAdapter)
 
     gcal = adapters.calendars[0]
     assert isinstance(gcal, GoogleCalendarAdapter)

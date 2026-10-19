@@ -315,7 +315,8 @@ class PendingActionRow(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     conversation_id: Mapped[str | None] = mapped_column(String(64), index=True)
     kind: Mapped[ActionKind] = mapped_column(_enum(ActionKind, "action_kind"))
-    item_id: Mapped[str] = mapped_column(ForeignKey("items.id"))
+    # Empty for actions that aren't about an item (send an email, book a meeting).
+    item_id: Mapped[str | None] = mapped_column(ForeignKey("items.id"))
     params: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     readback: Mapped[str] = mapped_column(Text)
     status: Mapped[ActionStatus] = mapped_column(

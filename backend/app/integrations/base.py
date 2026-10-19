@@ -87,6 +87,37 @@ class SentEmail:
     thread_id: str | None
 
 
+@dataclass(frozen=True)
+class NewEvent:
+    """A meeting the CEO asked to book."""
+
+    title: str
+    start: datetime
+    end: datetime
+    attendees: tuple[str, ...] = ()
+    description: str = ""
+    online: bool = True  # add a Teams or Meet link
+
+
+@dataclass(frozen=True)
+class ChatMessage:
+    id: str
+    sender: str | None
+    text: str
+    sent_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class Chat:
+    """A Teams chat: a one-on-one, a group chat or a meeting chat."""
+
+    id: str
+    topic: str | None
+    members: tuple[str, ...]  # display names, without the CEO
+    member_emails: tuple[str, ...] = ()
+    last_message: ChatMessage | None = None
+
+
 @dataclass
 class SyncResult(Generic[T]):
     """A page of changes plus the cursor to resume from next time.
@@ -117,6 +148,10 @@ class CalendarAdapter(ABC):
     def add_attendee(self, event_id: str, email: str) -> None:
         """Invite someone else (the delegate) to the event."""
 
+    @abstractmethod
+    def create_event(self, event: NewEvent) -> CalendarEvent:
+        """Book a meeting on the CEO's calendar and invite the attendees."""
+
 
 class EmailAdapter(ABC):
     source: Source
@@ -132,6 +167,34 @@ class EmailAdapter(ABC):
     @abstractmethod
     def send(self, message: OutboundEmail) -> SentEmail:
         """Send from the CEO's account; returns the provider's ids for the message."""
+
+    @abstractmethod
+    def search(self, query: str, limit: int = 10) -> list[EmailMessage]:
+        """Messages matching ``query`` (words, a name or an address), newest first."""
+
+    @abstractmethod
+    def get(self, message_id: str) -> EmailMessage:
+        """One message, so a reply can go to its sender."""
+
+
+class ChatAdapter(ABC):
+    """Reading and sending chat messages as the CEO (Microsoft Teams)."""
+
+    @abstractmethod
+    def recent_chats(self, limit: int = 10) -> list[Chat]:
+        """The CEO's chats with the newest message first."""
+
+    @abstractmethod
+    def messages(self, chat_id: str, limit: int = 10) -> list[ChatMessage]:
+        """The newest messages in a chat, newest first."""
+
+    @abstractmethod
+    def send(self, chat_id: str, text: str) -> ChatMessage:
+        """Post a message in an existing chat."""
+
+    @abstractmethod
+    def send_to_person(self, email: str, text: str) -> ChatMessage:
+        """Post in the one-on-one chat with ``email``, starting it if needed."""
 
 
 class TaskAdapter(ABC):

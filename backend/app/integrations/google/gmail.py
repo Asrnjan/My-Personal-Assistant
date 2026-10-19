@@ -51,6 +51,13 @@ class GmailAdapter(EmailAdapter):
                 replies.append(msg)
         return replies
 
+    def search(self, query: str, limit: int = 10) -> list[EmailMessage]:
+        body = self._http.get_json("/messages", params={"q": query, "maxResults": str(limit)})
+        return [_message(self._get_metadata(m["id"])) for m in body.get("messages", [])[:limit]]
+
+    def get(self, message_id: str) -> EmailMessage:
+        return _message(self._get_metadata(message_id))
+
     def send(self, message: OutboundEmail) -> SentEmail:
         mime = build_mime(message)
         payload: dict[str, Any] = {}

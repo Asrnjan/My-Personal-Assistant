@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.audit import audit
 from app.clock import Clock
 from app.db.models import ConversationRow, ItemRow
-from app.domain.enums import ActionKind, ApprovedVia, ItemKind, ItemStatus, PriorityBand
+from app.domain.enums import ActionKind, ApprovedVia, ItemKind, ItemStatus, PriorityBand, Source
 from app.engine.actions import ActionError, ActionResult, ActionService, PendingAction
 from app.engine.approval import ApprovalPolicy
 from app.engine.briefing import Brief, Briefer, BriefItem, clean_title, spoken_time
@@ -46,6 +46,8 @@ from app.engine.delegation import (
 from app.engine.learning import LearningService, preferences_block
 from app.engine.priority import prescore
 from app.engine.rubric import Rubric
+from app.integrations.base import Chat
+from app.integrations.http import AuthExpiredError, IntegrationError
 from app.llm.client import LLMClient, Task
 from app.llm.errors import BudgetExceededError, LLMError
 from app.llm.prompts import load_prompt, untrusted
@@ -106,6 +108,13 @@ _YES_WORDS = re.compile(
     r"\b(yes|yeah|yep|sure|ok|okay|confirm|go ahead|do it|send it|approve)\b", re.IGNORECASE
 )
 _TIME = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", re.IGNORECASE)
+_ADDRESS = re.compile(r"[^@\s<>]+@[^@\s<>]+\.[a-z]{2,}", re.IGNORECASE)
+
+
+def _and_list(names: list[str]) -> str:
+    if len(names) <= 2:
+        return " and ".join(names)
+    return f"{', '.join(names[:-1])} and {names[-1]}"
 
 
 def is_affirmation(text: str) -> bool:
@@ -137,6 +146,8 @@ class ConverseResponse(BaseModel):
     executed: list[ActionResult]
     needs_confirmation: bool
     brief: Brief | None = None
+    # Accounts to connect (ids from GET /accounts) before the request can be done.
+    needs_account: list[str] = []
 
 
 @dataclass
@@ -147,6 +158,7 @@ class _Turn:
     executed: list[ActionResult] = field(default_factory=list)
     questions: list[str] = field(default_factory=list)
     brief: Brief | None = None
+    needs_account: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -277,6 +289,98 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "search_email",
+        "description": (
+            "Search the CEO's mailboxes (Outlook and Gmail). Use words, a person's name or an "
+            "address. Returns the newest matches with their message_id and source."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "reply_email",
+        "description": (
+            "Propose replying to an email found with search_email. Write the reply text the "
+            "CEO asked for. Returns a read-back."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "message_id": {"type": "string"},
+                "source": {"type": "string", "enum": ["outlook", "gmail"]},
+                "text": {"type": "string", "description": "The reply, as the CEO wants it."},
+            },
+            "required": ["message_id", "source", "text"],
+        },
+    },
+    {
+        "name": "send_email",
+        "description": (
+            "Propose a new email from the CEO to someone in their contacts, or to an address "
+            "the CEO said themselves. Returns a read-back."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "to": {
+                    "type": "string",
+                    "description": "A name as the CEO said it, or an address.",
+                },
+                "subject": {"type": "string"},
+                "text": {"type": "string"},
+            },
+            "required": ["to", "subject", "text"],
+        },
+    },
+    {
+        "name": "read_teams",
+        "description": (
+            "Read the CEO's Microsoft Teams chats: the latest chats, or the recent messages "
+            "with one person or group when 'person' is given."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"person": {"type": "string"}},
+        },
+    },
+    {
+        "name": "send_teams_message",
+        "description": (
+            "Propose sending a Teams chat message to a person (contact or someone the CEO "
+            "already chats with) or to a chat_id from read_teams. Returns a read-back."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "to": {"type": "string", "description": "A name, an address or a chat_id."},
+                "text": {"type": "string"},
+            },
+            "required": ["to", "text"],
+        },
+    },
+    {
+        "name": "schedule_meeting",
+        "description": (
+            "Propose booking a meeting on the CEO's calendar and inviting people from their "
+            "contacts (or addresses the CEO said). Returns a read-back."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "date": _DATE,
+                "start_time": {"type": "string", "description": "24-hour time, HH:MM."},
+                "duration_minutes": {"type": "integer", "minimum": 5, "maximum": 480},
+                "attendees": {"type": "array", "items": {"type": "string"}},
+                "online": {"type": "boolean", "description": "Add a Teams or Meet link."},
+            },
+            "required": ["title", "date", "start_time"],
+        },
+    },
+    {
         "name": "confirm_pending_action",
         "description": (
             "Execute a pending action the CEO has just approved. action_id may be 'all'. "
@@ -387,6 +491,7 @@ class ConversationAgent:
             executed=turn.executed,
             needs_confirmation=bool(pending),
             brief=turn.brief,
+            needs_account=turn.needs_account,
         )
 
     # -- dialogue rules -----------------------------------------------------------
@@ -671,7 +776,15 @@ class ConversationAgent:
             return {"error": f"unknown tool {name}"}
         try:
             result: Any = handler(state, turn, args)
-        except (ActionError, ValueError) as exc:
+        except AuthExpiredError as exc:
+            account = "google" if exc.service == "google" else "outlook"
+            if name in ("read_teams", "send_teams_message"):
+                account = "teams"
+            return self._needs(turn, [account], "The sign-in for that account has expired.")
+        except IntegrationError as exc:
+            log.warning("tool %s failed: %s", name, exc)
+            return {"error": f"That service didn't answer: {str(exc)[:200]}"}
+        except (ActionError, ValueError, KeyError) as exc:
             return {"error": str(exc)}
         return result
 
@@ -689,7 +802,7 @@ class ConversationAgent:
         state: _State,
         turn: _Turn,
         kind: ActionKind,
-        item_id: str,
+        item_id: str | None,
         readback: str,
         params: dict[str, Any],
     ) -> dict[str, Any]:
@@ -860,6 +973,223 @@ class ConversationAgent:
             return self._propose(state, turn, ActionKind.DROP, item.id, readback, {})
 
         return self._with_item(state, args, propose)
+
+    # -- email, Teams and meetings ------------------------------------------------------
+
+    def _needs(self, turn: _Turn, accounts: list[str], why: str) -> dict[str, Any]:
+        """Ask for an account: the app shows a Connect button for each one."""
+        turn.needs_account += [a for a in accounts if a not in turn.needs_account]
+        names = {"outlook": "Outlook", "google": "Google", "teams": "Microsoft Teams"}
+        spoken = " or ".join(names[a] for a in accounts)
+        message = f"{why} Connect {spoken} in Settings, Accounts, and ask me again."
+        return {"status": "needs_account", "message": message}
+
+    def _said_by_ceo(self, state: _State, turn: _Turn, address: str) -> bool:
+        said = [turn.text] + [
+            str(h.get("text", "")) for h in state.history if h.get("role") == "user"
+        ]
+        return any(address.lower() in s.lower() for s in said)
+
+    def _person(self, state: _State, turn: _Turn, who: str) -> tuple[str, str] | str:
+        """(name, address) for someone the CEO named, or a question to ask."""
+        who = who.strip()
+        if _ADDRESS.fullmatch(who) and self._said_by_ceo(state, turn, who):
+            with self._sessions() as s:
+                known = next(
+                    (d for d in all_delegates(s) if str(d.email).lower() == who.lower()), None
+                )
+            return (known.full_name if known else who), who.lower()
+        with self._sessions() as s:
+            match = NameResolver(all_delegates(s)).resolve(who)
+        if match.delegate is None:
+            return match.question or "Who do you mean?"
+        return match.delegate.full_name, str(match.delegate.email).lower()
+
+    def _ask(self, turn: _Turn, question: str) -> dict[str, Any]:
+        turn.questions.append(question)
+        return {"status": "question", "question": question}
+
+    def _tool_search_email(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        mailboxes = self._delegation.adapters().mail
+        if not mailboxes:
+            return self._needs(turn, ["outlook", "google"], "Your email isn't connected yet.")
+        query = str(args.get("query", "")).strip()[:200]
+        if not query:
+            return {"error": "What should I search for?"}
+        found = [m for box in mailboxes for m in box.search(query, limit=8)]
+        found.sort(key=lambda m: m.received_at.timestamp() if m.received_at else 0, reverse=True)
+        today = self._clock().astimezone(self._tz).date()
+        lines = []
+        for m in found[:8]:
+            when = ""
+            if m.received_at:
+                local = m.received_at.astimezone(self._tz)
+                when = f"{spoken_day(local.date(), today)} {spoken_time(m.received_at, self._tz)}"
+            lines.append(
+                f"message_id={m.id} | source={m.source.value} | from {m.sender} | {when} | "
+                f"{json.dumps(m.subject)} | {m.snippet[:300]}"
+            )
+        return {"emails": untrusted("email", "\n".join(lines) or "no matches")}
+
+    def _tool_reply_email(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        source = Source(str(args.get("source", "")))
+        box = next((m for m in self._delegation.adapters().mail if m.source == source), None)
+        if box is None:
+            account = "google" if source == Source.GMAIL else "outlook"
+            return self._needs(turn, [account], "That mailbox isn't connected.")
+        original = box.get(str(args.get("message_id", "")))
+        if not original.sender:
+            return {"error": "That email has no sender to reply to."}
+        text = str(args.get("text", "")).strip()
+        if not text:
+            return {"error": "What should the reply say?"}
+        subject = original.subject
+        if not subject.lower().startswith("re:"):
+            subject = f"Re: {subject}"
+        readback = (
+            f"Replying to {original.sender} about {clean_title(original.subject)}, saying: "
+            f"{text} Confirm?"
+        )
+        params = {
+            "title": f"Reply: {original.subject}",
+            "source": source.value,
+            "message_id": original.id,
+            "to": [original.sender],
+            "to_name": original.sender,
+            "subject": subject,
+            "text": text,
+        }
+        return self._propose(state, turn, ActionKind.REPLY_EMAIL, None, readback, params)
+
+    def _tool_send_email(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        mailboxes = self._delegation.adapters().mail
+        if not mailboxes:
+            return self._needs(turn, ["outlook", "google"], "Your email isn't connected yet.")
+        person = self._person(state, turn, str(args.get("to", "")))
+        if isinstance(person, str):
+            return self._ask(turn, person)
+        name, address = person
+        subject = str(args.get("subject", "")).strip() or "(no subject)"
+        text = str(args.get("text", "")).strip()
+        if not text:
+            return {"error": "What should the email say?"}
+        readback = f"Emailing {name} about {subject}, saying: {text} Confirm?"
+        params = {
+            "title": f"Email to {name}: {subject}",
+            "source": mailboxes[0].source.value,
+            "to": [address],
+            "to_name": name,
+            "subject": subject,
+            "text": text,
+        }
+        return self._propose(state, turn, ActionKind.SEND_EMAIL, None, readback, params)
+
+    def _match_chat(self, chats: list[Chat], who: str) -> Chat | None:
+        who = who.strip().lower()
+        for c in chats:
+            if c.id == who or who in c.member_emails:
+                return c
+        scored = sorted(
+            (
+                (c, max(fuzz.token_set_ratio(who, n.lower()) for n in [c.topic or "", *c.members]))
+                for c in chats
+                if c.members or c.topic
+            ),
+            key=lambda pair: pair[1],
+            reverse=True,
+        )
+        if scored and scored[0][1] >= 75:
+            return scored[0][0]
+        return None
+
+    def _tool_read_teams(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        chat = self._delegation.adapters().chat
+        if chat is None:
+            return self._needs(turn, ["teams"], "Teams isn't connected yet.")
+        chats = chat.recent_chats(limit=20)
+        person = str(args.get("person") or "").strip()
+        if not person:
+            lines = []
+            for c in chats[:10]:
+                last = c.last_message
+                said = f"{last.sender}: {last.text[:200]}" if last else "no messages"
+                name = c.topic or ", ".join(c.members) or "a chat"
+                lines.append(f"chat_id={c.id} | {name} | {said}")
+            return {"chats": untrusted("teams", "\n".join(lines) or "no chats")}
+        found = self._match_chat(chats, person)
+        if found is None:
+            return {"error": f"I couldn't find a Teams chat with {person}."}
+        messages = chat.messages(found.id, limit=10)
+        lines = [f"{m.sender}: {m.text[:300]}" for m in reversed(messages)]
+        return {
+            "chat_id": found.id,
+            "with": ", ".join(found.members) or found.topic,
+            "messages": untrusted("teams", "\n".join(lines) or "no messages"),
+        }
+
+    def _tool_send_teams_message(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        chat = self._delegation.adapters().chat
+        if chat is None:
+            return self._needs(turn, ["teams"], "Teams isn't connected yet.")
+        text = str(args.get("text", "")).strip()
+        if not text:
+            return {"error": "What should the message say?"}
+        who = str(args.get("to", "")).strip()
+        params: dict[str, Any] = {"text": text}
+        person = self._person(state, turn, who)
+        if isinstance(person, str):
+            # Not a contact: someone the CEO already chats with in Teams.
+            found = self._match_chat(chat.recent_chats(limit=50), who)
+            if found is None:
+                return self._ask(turn, person)
+            name = found.topic or ", ".join(found.members) or who
+            params.update(chat_id=found.id, to_name=name)
+        else:
+            name, address = person
+            params.update(email=address, to_name=name)
+        params["title"] = f"Teams message to {name}"
+        readback = f"Sending {name} on Teams: {text} Confirm?"
+        return self._propose(state, turn, ActionKind.TEAMS_MESSAGE, None, readback, params)
+
+    def _tool_schedule_meeting(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        calendars = self._delegation.adapters().calendars
+        if not calendars:
+            return self._needs(turn, ["outlook", "google"], "Your calendar isn't connected yet.")
+        day = date.fromisoformat(str(args.get("date", "")))
+        clock = re.fullmatch(r"(\d{1,2}):(\d{2})", str(args.get("start_time", "")).strip())
+        if clock is None:
+            return {"error": "Give start_time as HH:MM."}
+        start = datetime.combine(day, time(int(clock.group(1)), int(clock.group(2))), self._tz)
+        if start <= self._clock():
+            return {"error": "That time has already passed."}
+        minutes = int(args.get("duration_minutes") or 30)
+        names, addresses = [], []
+        for who in args.get("attendees") or []:
+            person = self._person(state, turn, str(who))
+            if isinstance(person, str):
+                return self._ask(turn, person)
+            names.append(person[0])
+            addresses.append(person[1])
+        title = str(args.get("title", "")).strip() or "Meeting"
+        online = bool(args.get("online", True))
+        calendar = calendars[0]
+        today = self._clock().astimezone(self._tz).date()
+        link = " with a Teams link" if calendar.source == Source.OUTLOOK else " with a Meet link"
+        with_whom = f" with {_and_list(names)}" if names else ""
+        readback = (
+            f"Booking {title} {spoken_day(day, today)} at {spoken_time(start, self._tz)} "
+            f"for {minutes} minutes{with_whom}{link if online else ''}. Confirm?"
+        )
+        params = {
+            "title": f"Meeting: {title}",
+            "subject": title,
+            "source": calendar.source.value,
+            "start": start.isoformat(),
+            "end": (start + timedelta(minutes=minutes)).isoformat(),
+            "attendees": addresses,
+            "online": online,
+        }
+        return self._propose(state, turn, ActionKind.BOOK_MEETING, None, readback, params)
 
     def _tool_set_priority(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
         band = PriorityBand(str(args.get("band")))

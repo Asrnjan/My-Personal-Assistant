@@ -1068,6 +1068,27 @@ a {
 
 /* ---------- Transcript ---------- */
 
+.connect-prompt {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(110, 231, 255, 0.35);
+  border-radius: var(--radius-sm);
+  background: rgba(110, 231, 255, 0.06);
+  box-shadow: 0 0 22px rgba(110, 231, 255, 0.08);
+  display: grid;
+  gap: 10px;
+}
+
+.connect-prompt[hidden] { display: none; }
+
+.connect-text { margin: 0; color: var(--muted); }
+
+.connect-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .transcript {
   list-style: none;
   padding: 0;

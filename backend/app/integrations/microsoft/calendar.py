@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.domain.enums import Source
-from app.integrations.base import Attendee, CalendarAdapter, CalendarEvent, SyncResult
+from app.integrations.base import Attendee, CalendarAdapter, CalendarEvent, NewEvent, SyncResult
 from app.integrations.http import HttpClient, IntegrationError
 from app.integrations.microsoft.graph import UTC_PREFER, iterate_pages
 from app.integrations.mime import parse_iso
@@ -65,6 +65,26 @@ class OutlookCalendarAdapter(CalendarAdapter):
             return
         attendees.append({"emailAddress": {"address": email}, "type": "required"})
         self._http.send_json("PATCH", f"/me/events/{event_id}", {"attendees": attendees})
+
+    def create_event(self, event: NewEvent) -> CalendarEvent:
+        body: dict[str, Any] = {
+            "subject": event.title,
+            "body": {"contentType": "Text", "content": event.description},
+            "start": {"dateTime": _graph_time(event.start), "timeZone": "UTC"},
+            "end": {"dateTime": _graph_time(event.end), "timeZone": "UTC"},
+            "attendees": [
+                {"emailAddress": {"address": a}, "type": "required"} for a in event.attendees
+            ],
+        }
+        if event.online:
+            body["isOnlineMeeting"] = True
+            body["onlineMeetingProvider"] = "teamsForBusiness"
+        created = self._http.send_json("POST", "/me/events", body, headers={"Prefer": UTC_PREFER})
+        return _event(created)
+
+
+def _graph_time(dt: datetime) -> str:
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _event(e: dict[str, Any]) -> CalendarEvent:

@@ -28,10 +28,12 @@ from app.domain.enums import (
     DecisionAction,
     ItemKind,
     ItemStatus,
+    Source,
 )
 from app.engine.approval import ApprovalPolicy, Level
 from app.engine.briefing import clean_title
 from app.engine.delegation import DelegationService, calendar_for, tasks_for
+from app.integrations.base import NewEvent, OutboundEmail
 
 log = logging.getLogger(__name__)
 
@@ -39,11 +41,21 @@ DEFAULT_DECLINE_NOTE = "Thanks for the invite. I can't make this one."
 
 DecisionHook = Callable[[Session, ItemRow, PendingActionRow], None]
 
+# Things the CEO asks for in conversation that aren't about an item on the list.
+FREE_KINDS = frozenset(
+    {
+        ActionKind.SEND_EMAIL,
+        ActionKind.REPLY_EMAIL,
+        ActionKind.TEAMS_MESSAGE,
+        ActionKind.BOOK_MEETING,
+    }
+)
+
 
 class PendingAction(BaseModel):
     id: str
     kind: ActionKind
-    item_id: str
+    item_id: str | None
     title: str
     readback: str
     status: ActionStatus
@@ -69,7 +81,7 @@ def _view(row: PendingActionRow, item: ItemRow | None) -> PendingAction:
         id=row.id,
         kind=row.kind,
         item_id=row.item_id,
-        title=item.title if item else "",
+        title=item.title if item else str((row.params or {}).get("title", "")),
         readback=row.readback,
         status=row.status,
         created_at=row.created_at,
@@ -107,23 +119,31 @@ class ActionService:
     def propose(
         self,
         kind: ActionKind,
-        item_id: str,
+        item_id: str | None,
         readback: str,
         params: dict[str, Any] | None = None,
         conversation_id: str | None = None,
     ) -> PendingAction:
         if self._policy.level(kind.value) == Level.NEVER:
             raise ActionError(self._policy.refusal)
+        if (item_id is None) != (kind in FREE_KINDS):
+            raise ActionError(
+                f"{kind.value} needs an item" if item_id is None else "no item needed"
+            )
         with self._sessions.begin() as s:
-            item = s.get(ItemRow, item_id)
-            if item is None:
+            item = s.get(ItemRow, item_id) if item_id is not None else None
+            if item_id is not None and item is None:
                 raise ActionError("item not found")
             # A new proposal for the same item and kind replaces the older one.
-            for old in s.scalars(
-                select(PendingActionRow).where(
-                    PendingActionRow.item_id == item_id,
-                    PendingActionRow.kind == kind,
-                    PendingActionRow.status == ActionStatus.PENDING,
+            for old in (
+                []
+                if item_id is None
+                else s.scalars(
+                    select(PendingActionRow).where(
+                        PendingActionRow.item_id == item_id,
+                        PendingActionRow.kind == kind,
+                        PendingActionRow.status == ActionStatus.PENDING,
+                    )
                 )
             ):
                 old.status = ActionStatus.CANCELLED
@@ -149,7 +169,7 @@ class ActionService:
         self, status: ActionStatus | None = None, ids: Sequence[str] | None = None
     ) -> list[PendingAction]:
         with self._sessions() as s:
-            stmt = select(PendingActionRow, ItemRow).join(
+            stmt = select(PendingActionRow, ItemRow).outerjoin(
                 ItemRow, PendingActionRow.item_id == ItemRow.id
             )
             if status is not None:
@@ -178,8 +198,14 @@ class ActionService:
                 row.status = ActionStatus.CANCELLED
                 row.resolved_at = self._clock()
                 row.result = "Cancelled."
-                audit(s, f"action.{row.kind.value}", "cancelled", target=row.item_id, actor="ceo")
-            return _view(row, s.get(ItemRow, row.item_id))
+                audit(
+                    s,
+                    f"action.{row.kind.value}",
+                    "cancelled",
+                    target=row.item_id or row.id,
+                    actor="ceo",
+                )
+            return _view(row, s.get(ItemRow, row.item_id) if row.item_id else None)
 
     def confirm(self, action_id: str, via: ApprovedVia) -> ActionResult:
         with self._sessions.begin() as s:
@@ -192,11 +218,14 @@ class ActionService:
                     ok=row.status == ActionStatus.EXECUTED,
                     message=row.result or f"That was already {row.status.value}.",
                 )
-            item = s.get(ItemRow, row.item_id)
-            if item is None:  # pragma: no cover - guarded by the foreign key
+            item = s.get(ItemRow, row.item_id) if row.item_id else None
+            if item is None and row.kind not in FREE_KINDS:  # pragma: no cover - foreign key
                 raise ActionError("item not found")
             try:
-                outcome = self._execute(s, row, item, via)
+                if item is None:
+                    outcome = self._execute_free(s, row)
+                else:
+                    outcome = self._execute(s, row, item, via)
             except Exception as exc:
                 log.exception("action %s failed", row.id)
                 outcome = _Outcome(False, f"That didn't work: {str(exc)[:200]}")
@@ -204,7 +233,7 @@ class ActionService:
             row.resolved_at = self._clock()
             row.result = outcome.message
             row.decision_id = outcome.decision_id
-            if outcome.ok and self._on_decision is not None:
+            if outcome.ok and item is not None and self._on_decision is not None:
                 self._on_decision(s, item, row)
             return ActionResult(action_id=row.id, ok=outcome.ok, message=outcome.message)
 
@@ -252,6 +281,56 @@ class ActionService:
             via,
             f"Dropped {clean_title(item.title)}.",
         )
+
+    def _execute_free(self, s: Session, row: PendingActionRow) -> _Outcome:
+        """Send an email or Teams message, or book a meeting, exactly as read back."""
+        params = row.params or {}
+        adapters = self._delegation.adapters()
+        source = Source(params["source"]) if params.get("source") else None
+        if row.kind in (ActionKind.SEND_EMAIL, ActionKind.REPLY_EMAIL):
+            mail = next((m for m in adapters.mail if source in (None, m.source)), None)
+            if mail is None:
+                return _Outcome(False, "Your email isn't connected, so I couldn't send it.")
+            sent = mail.send(
+                OutboundEmail(
+                    to=tuple(params["to"]),
+                    subject=str(params["subject"]),
+                    text=str(params["text"]),
+                    reply_to_message_id=params.get("message_id"),
+                )
+            )
+            audit(
+                s, f"email.{row.kind.value}", "ok", actor="ceo", to=params["to"], id=sent.message_id
+            )
+            verb = "Replied to" if row.kind == ActionKind.REPLY_EMAIL else "Sent the email to"
+            return _Outcome(True, f"{verb} {params.get('to_name') or params['to'][0]}.")
+        if row.kind == ActionKind.TEAMS_MESSAGE:
+            if adapters.chat is None:
+                return _Outcome(False, "Teams isn't connected, so I couldn't send it.")
+            if params.get("chat_id"):
+                adapters.chat.send(str(params["chat_id"]), str(params["text"]))
+            else:
+                adapters.chat.send_to_person(str(params["email"]), str(params["text"]))
+            audit(
+                s, "teams.message", "ok", actor="ceo", to=params.get("email") or params["chat_id"]
+            )
+            return _Outcome(True, f"Sent your Teams message to {params.get('to_name', 'them')}.")
+        calendar = next((c for c in adapters.calendars if source in (None, c.source)), None)
+        if calendar is None:
+            return _Outcome(False, "Your calendar isn't connected, so I couldn't book it.")
+        event = calendar.create_event(
+            NewEvent(
+                title=str(params["subject"]),
+                start=datetime.fromisoformat(str(params["start"])),
+                end=datetime.fromisoformat(str(params["end"])),
+                attendees=tuple(params.get("attendees") or ()),
+                online=bool(params.get("online", True)),
+            )
+        )
+        audit(
+            s, "meeting.book", "ok", actor="ceo", event=event.id, attendees=params.get("attendees")
+        )
+        return _Outcome(True, f"Booked {params['subject']} and sent the invites.")
 
     def _decision(
         self,

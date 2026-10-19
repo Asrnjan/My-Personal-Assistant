@@ -55,6 +55,18 @@ class OutlookMailAdapter(EmailAdapter):
         ]
         return [m for m in messages if not self._ceo or m.sender != self._ceo]
 
+    def search(self, query: str, limit: int = 10) -> list[EmailMessage]:
+        # $search takes a quoted KQL string; quotes inside it would end it early.
+        words = query.replace('"', " ").replace("\\", " ").strip()
+        params = {"$search": f'"{words}"', "$select": _SELECT, "$top": str(limit)}
+        page = self._http.get_json("/me/messages", params=params)
+        return [_message(m) for m in page.get("value", [])][:limit]
+
+    def get(self, message_id: str) -> EmailMessage:
+        return _message(
+            self._http.get_json(f"/me/messages/{message_id}", params={"$select": _SELECT})
+        )
+
     def send(self, message: OutboundEmail) -> SentEmail:
         body: dict[str, Any] = {
             "subject": message.subject,

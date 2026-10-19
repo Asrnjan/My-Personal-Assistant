@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any
 
 from app.domain.enums import Source
-from app.integrations.base import Attendee, CalendarAdapter, CalendarEvent, SyncResult
+from app.integrations.base import Attendee, CalendarAdapter, CalendarEvent, NewEvent, SyncResult
 from app.integrations.http import HttpClient, IntegrationError
 from app.integrations.mime import parse_date, parse_iso
 
@@ -66,6 +67,26 @@ class GoogleCalendarAdapter(CalendarAdapter):
         if not any(a.get("email", "").lower() == email.lower() for a in attendees):
             attendees.append({"email": email})
             self._patch_attendees(event_id, attendees)
+
+    def create_event(self, event: NewEvent) -> CalendarEvent:
+        body: dict[str, Any] = {
+            "summary": event.title,
+            "description": event.description,
+            "start": {"dateTime": event.start.isoformat()},
+            "end": {"dateTime": event.end.isoformat()},
+            "attendees": [{"email": a} for a in event.attendees],
+        }
+        params = {"sendUpdates": "all"}
+        if event.online:
+            body["conferenceData"] = {
+                "createRequest": {
+                    "requestId": uuid.uuid4().hex,
+                    "conferenceSolutionKey": {"type": "hangoutsMeet"},
+                }
+            }
+            params["conferenceDataVersion"] = "1"
+        created = self._http.send_json("POST", self._events_url, body, params=params)
+        return _event(created)
 
     def _patch_attendees(self, event_id: str, attendees: list[dict[str, Any]]) -> None:
         self._http.send_json(

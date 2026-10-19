@@ -34,7 +34,13 @@ const ACTION_KINDS = {
   defer: 'Defer',
   close_task: 'Close task',
   drop: 'Drop',
+  send_email: 'Email',
+  reply_email: 'Reply',
+  teams_message: 'Teams message',
+  book_meeting: 'Book meeting',
 };
+
+const ACCOUNT_NAMES = { outlook: 'Outlook', google: 'Google', teams: 'Microsoft Teams' };
 
 const ORB_LABELS = {
   idle: 'Tap to talk',
@@ -594,9 +600,38 @@ function handleConverseResponse(data) {
     renderPending();
     loadFollowups();
   }
+  promptConnect(Array.isArray(data.needs_account) ? data.needs_account : []);
   if (data.needs_confirmation) {
     $('pending-section').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
+}
+
+// The assistant needs an account it can't reach yet: one tap asks for access.
+function promptConnect(ids) {
+  const box = $('connect-prompt');
+  box.hidden = ids.length === 0;
+  $('connect-buttons').replaceChildren(...ids.map((id) => {
+    const name = ACCOUNT_NAMES[id] || id;
+    return h('button', { type: 'button', class: 'btn btn-primary', 'data-connect': id, text: `Allow ${name}`, onclick: () => allowAccount(id) });
+  }));
+}
+
+async function allowAccount(id) {
+  try {
+    state.accounts = await api('/accounts');
+  } catch (err) {
+    toast(err.message, { variant: 'error', title: 'Accounts' });
+    return;
+  }
+  const account = (state.accounts.accounts || []).find((a) => a.id === id);
+  if (!account) return;
+  if (account.ready) {
+    connectAccount(account);
+    return;
+  }
+  openSettings();
+  if (state.accounts.oauth_ready) openAppKeys(account.provider);
+  toast(`${account.name} needs a one-time setup first. Follow the steps in Settings.`, { title: account.name });
 }
 
 // Sends a message (typed or spoken) and speaks the reply. Returns the speak result.

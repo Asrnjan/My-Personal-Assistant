@@ -12,9 +12,13 @@ from app.domain.enums import Channel, Source
 from app.integrations.base import (
     CalendarAdapter,
     CalendarEvent,
+    Chat,
+    ChatAdapter,
+    ChatMessage,
     EmailAdapter,
     EmailMessage,
     ExternalTask,
+    NewEvent,
     OutboundEmail,
     SentEmail,
     SyncResult,
@@ -32,6 +36,7 @@ class FakeCalendar(CalendarAdapter):
     changes: list[CalendarEvent] = field(default_factory=list)
     declined: list[tuple[str, str]] = field(default_factory=list)
     added: list[tuple[str, str]] = field(default_factory=list)
+    created: list[NewEvent] = field(default_factory=list)
     fail_with: IntegrationError | None = None
     sync_calls: int = 0
 
@@ -59,6 +64,14 @@ class FakeCalendar(CalendarAdapter):
         if self.fail_with:
             raise self.fail_with
         self.added.append((event_id, email))
+
+    def create_event(self, event: NewEvent) -> CalendarEvent:
+        if self.fail_with:
+            raise self.fail_with
+        self.created.append(event)
+        return CalendarEvent(
+            self.source, f"new-{len(self.created)}", event.title, event.start, event.end
+        )
 
 
 @dataclass
@@ -89,6 +102,22 @@ class FakeMail(EmailAdapter):
         self.sent.append(message)
         n = len(self.sent)
         return SentEmail(f"sent-{n}", f"thread-{n}")
+
+    def search(self, query: str, limit: int = 10) -> list[EmailMessage]:
+        words = query.lower().split()
+        found = [
+            m
+            for m in self.inbox
+            if all(w in f"{m.subject} {m.sender} {m.snippet}".lower() for w in words)
+        ]
+        found.sort(key=lambda m: m.received_at.timestamp() if m.received_at else 0, reverse=True)
+        return found[:limit]
+
+    def get(self, message_id: str) -> EmailMessage:
+        for m in self.inbox:
+            if m.id == message_id:
+                return m
+        raise IntegrationError("fake", f"no message {message_id}", status=404)
 
 
 @dataclass
@@ -121,6 +150,31 @@ class FakeTasks(TaskAdapter):
         self.closed.append(task_id)
         if task_id in self.tasks:
             self.tasks[task_id] = replace(self.tasks[task_id], done=True)
+
+
+@dataclass
+class FakeChat(ChatAdapter):
+    chats: list[Chat] = field(default_factory=list)
+    history: dict[str, list[ChatMessage]] = field(default_factory=dict)
+    sent: list[tuple[str, str]] = field(default_factory=list)  # (chat id or email, text)
+    fail_with: IntegrationError | None = None
+
+    def recent_chats(self, limit: int = 10) -> list[Chat]:
+        if self.fail_with:
+            raise self.fail_with
+        return self.chats[:limit]
+
+    def messages(self, chat_id: str, limit: int = 10) -> list[ChatMessage]:
+        return self.history.get(chat_id, [])[:limit]
+
+    def send(self, chat_id: str, text: str) -> ChatMessage:
+        if self.fail_with:
+            raise self.fail_with
+        self.sent.append((chat_id, text))
+        return ChatMessage(f"msg-{len(self.sent)}", "CEO", text)
+
+    def send_to_person(self, email: str, text: str) -> ChatMessage:
+        return self.send(email, text)
 
 
 @dataclass
