@@ -23,7 +23,7 @@ def load_build_script() -> Any:
 
 def test_example_config_is_valid(clean_env: dict[str, str]) -> None:
     config = load_config(DESKTOP / "desktop.example.toml", env=clean_env)
-    assert config.wake.phrase == "hey jarvis"
+    assert config.wake.phrase == "atlas"
     assert config.tts.effective_voice == "en_US-lessac-medium"
 
 
