@@ -35,5 +35,26 @@ services:
     depends_on: [assistant]
     restart: unless-stopped
 
+  # A free HTTPS address that never changes (https://atlas.<your-tailnet>.ts.net),
+  # running inside Docker, so nothing is installed on the computer and no window stays
+  # open. Put TS_AUTHKEY in .env (docs/DEPLOY.md), then once:
+  #   docker compose --profile link up -d
+  link:
+    image: tailscale/tailscale:stable
+    profiles: ["link"]
+    hostname: ${TS_HOSTNAME:-atlas}
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: ${TS_HOSTNAME:-atlas}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_SERVE_CONFIG: /config/serve.json
+    volumes:
+      - link-state:/var/lib/tailscale
+      - ./deploy/tailscale-serve.json:/config/serve.json:ro
+    depends_on: [assistant]
+    restart: unless-stopped
+
 volumes:
   assistant-data:
+  link-state:

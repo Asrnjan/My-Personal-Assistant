@@ -18,6 +18,21 @@ TRUST_PROXY_HEADERS=true                         # rate limits per real client, 
 
 and add `<PUBLIC_BASE_URL>/oauth/google/callback` (and/or `/oauth/microsoft/callback`) to your OAuth app's redirect URIs.
 
+## Option 0: a fixed address with only Docker (nothing to install)
+
+The `link` service in `docker-compose.yml` runs Tailscale Funnel inside Docker. It gives a free HTTPS address that never changes, `https://atlas.<your-tailnet>.ts.net`, and it starts by itself with Docker, so no window has to stay open.
+
+1. Sign up (free) at https://login.tailscale.com with your Google or Microsoft account.
+2. In the admin console open **DNS** and press **Enable HTTPS**.
+3. Open **Settings → Keys → Generate auth key**. Leave Reusable off and Ephemeral off, press **Generate key**, and copy it (`tskey-auth-...`).
+4. In `.env` add `TS_AUTHKEY=tskey-auth-...` and `TRUST_PROXY_HEADERS=true`.
+5. Run `docker compose --profile link up -d`. After about a minute, **Machines** in the admin console lists `atlas`; its address is the name shown under it plus `.ts.net`, for example `https://atlas.tail1234.ts.net`. `docker compose logs link` also prints it.
+6. Set `PUBLIC_BASE_URL` to that address in `.env`, run `docker compose up -d --force-recreate assistant`, and add `<address>/oauth/google/callback` and `/oauth/microsoft/callback` to your OAuth apps.
+
+If the address doesn't open, your tailnet's access policy may not allow Funnel yet: in **Access controls** make sure it contains `"nodeAttrs": [{"target": ["autogroup:member"], "attr": ["funnel"]}]`.
+
+Turn on **Start Docker Desktop when you sign in** (Docker Desktop → Settings → General) and keep the computer from sleeping while plugged in.
+
 ## Option 1: Cloudflare Tunnel from your own computer
 
 Cloudflare Tunnel makes an outbound connection to Cloudflare, so you don't open ports on your router, and you get HTTPS for free.
