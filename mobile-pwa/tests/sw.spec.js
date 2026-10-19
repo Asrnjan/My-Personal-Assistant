@@ -32,4 +32,9 @@ test('service worker registers, controls the page and serves the shell offline',
   await expect(page.locator('#orb')).toBeVisible();
   await expect(page.locator('.brand-title')).toHaveText(/Chief of Staff/i);
   await context.setOffline(false);
+
+  // Other pages on the same server (API docs, OAuth callback) are not swapped for the app.
+  await page.goto('/docs');
+  await expect(page.locator('#orb')).toHaveCount(0);
+  await expect(page.locator('body')).toContainText('Not found');
 });

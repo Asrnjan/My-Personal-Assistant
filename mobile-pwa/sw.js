@@ -1,7 +1,7 @@
 // Service worker: offline app shell, API network-first, Web Push.
 'use strict';
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = `cos-shell-${VERSION}`;
 const DATA_CACHE = `cos-data-${VERSION}`;
 const FONT_CACHE = `cos-fonts-${VERSION}`;
@@ -87,11 +87,13 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname === '/ws' || url.pathname.startsWith('/tts')) return;
 
+  const bare = url.origin + url.pathname;
+  // Only the app's own page is served from the cache. Other pages on the same server
+  // (/docs, /health, the OAuth callback) must load from the backend.
   if (request.mode === 'navigate') {
-    event.respondWith(cacheFirst(request, SHELL_CACHE, scopeUrl('index.html')));
+    if (SHELL_URLS.has(bare)) event.respondWith(cacheFirst(request, SHELL_CACHE, scopeUrl('index.html')));
     return;
   }
-  const bare = url.origin + url.pathname;
   if (SHELL_URLS.has(bare)) {
     event.respondWith(cacheFirst(request, SHELL_CACHE));
     return;
