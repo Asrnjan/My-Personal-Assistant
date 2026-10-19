@@ -171,6 +171,39 @@
       <button id="logout-btn" type="button" class="btn btn-ghost" hidden>Sign out</button>
     </section>
 
+    <section class="sheet-section" aria-labelledby="accounts-title">
+      <h3 id="accounts-title">Accounts</h3>
+      <p class="hint">Connect your email, calendar and Teams. You sign in with Microsoft or Google and tap <strong>Accept</strong>.</p>
+      <ul id="accounts-list" class="accounts-list" aria-live="polite"></ul>
+      <p id="accounts-note" class="hint warn" hidden></p>
+      <details id="app-keys" class="app-keys">
+        <summary>One-time setup: app keys</summary>
+        <p class="hint">Microsoft and Google ask every app to register once. Create the app in their console, then paste its keys here. Your secret is stored encrypted.</p>
+        <form id="app-keys-form" class="field-row" autocomplete="off">
+          <label for="app-provider">Provider</label>
+          <select id="app-provider" class="select">
+            <option value="microsoft">Microsoft (Outlook and Teams)</option>
+            <option value="google">Google (Gmail and Calendar)</option>
+          </select>
+          <p class="hint">Redirect URI to paste in the console:</p>
+          <div class="input-group">
+            <input id="redirect-uri" type="text" readonly aria-label="Redirect URI">
+            <button type="button" class="btn btn-ghost" id="copy-redirect">Copy</button>
+          </div>
+          <label for="app-client-id">Client ID</label>
+          <div class="input-group"><input id="app-client-id" name="client_id" required spellcheck="false" autocapitalize="off"></div>
+          <label for="app-client-secret">Client secret</label>
+          <div class="input-group"><input id="app-client-secret" name="client_secret" type="password" required autocomplete="off"></div>
+          <div id="tenant-row" class="field-row">
+            <label for="app-tenant">Tenant ID <span class="hint-inline">(Directory ID from Azure)</span></label>
+            <div class="input-group"><input id="app-tenant" name="tenant_id" placeholder="organizations" spellcheck="false" autocapitalize="off"></div>
+          </div>
+          <p id="app-keys-state" class="hint" aria-live="polite"></p>
+          <button type="submit" class="btn btn-primary">Save keys</button>
+        </form>
+      </details>
+    </section>
+
     <section class="sheet-section" aria-labelledby="api-title">
       <h3 id="api-title">Server</h3>
       <form id="api-form" class="field-row" autocomplete="off">

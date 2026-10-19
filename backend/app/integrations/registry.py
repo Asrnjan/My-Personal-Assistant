@@ -56,7 +56,7 @@ def build_adapters(
             return None
         if not oauth.is_connected(provider):
             out.not_configured.append(
-                f"{provider}: account not connected (open /oauth/{provider}/start)"
+                f"{provider}: account not connected (Settings → Accounts in the app)"
             )
             return None
         return HttpClient(
@@ -69,13 +69,17 @@ def build_adapters(
         )
 
     enabled = config.adapters
-    if "google" in enabled.calendar and (c := oauth_client("google", gcal.BASE_URL)):
+    # An account connected from the app is used even when config.yaml doesn't list it.
+    connected = {p for p in ("google", "microsoft") if oauth is not None and oauth.is_connected(p)}
+    calendars = set(enabled.calendar) | connected
+    email = set(enabled.email) | connected
+    if "google" in calendars and (c := oauth_client("google", gcal.BASE_URL)):
         out.calendars.append(gcal.GoogleCalendarAdapter(c))
-    if "google" in enabled.email and (c := oauth_client("google", gmail.BASE_URL)):
+    if "google" in email and (c := oauth_client("google", gmail.BASE_URL)):
         out.mail.append(gmail.GmailAdapter(c))
-    if "microsoft" in enabled.calendar and (c := oauth_client("microsoft", graph.BASE_URL)):
+    if "microsoft" in calendars and (c := oauth_client("microsoft", graph.BASE_URL)):
         out.calendars.append(mscal.OutlookCalendarAdapter(c))
-    if "microsoft" in enabled.email and (c := oauth_client("microsoft", graph.BASE_URL)):
+    if "microsoft" in email and (c := oauth_client("microsoft", graph.BASE_URL)):
         out.mail.append(msmail.OutlookMailAdapter(c))
 
     if "jira" in enabled.tasks:

@@ -36,11 +36,16 @@ def start(provider: str, request: Request, _client: AuthenticatedClient) -> Star
     return StartResponse(authorization_url=url)
 
 
-def _page(title: str, message: str, code: int) -> HTMLResponse:
+def _page(title: str, message: str, code: int, back: str = "/") -> HTMLResponse:
+    # The app is served from "/", so the button (and, on success, a short redirect)
+    # takes you straight back to it.
+    refresh = f"<meta http-equiv=refresh content='2;url={escape(back)}'>" if code == 200 else ""
     body = (
         "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
-        f"<title>{escape(title)}</title><body style='font-family:system-ui;padding:2rem'>"
+        f"{refresh}<title>{escape(title)}</title>"
+        "<body style='font-family:system-ui;padding:2rem;background:#0b1020;color:#e6ecff'>"
         f"<h1>{escape(title)}</h1><p>{escape(message)}</p>"
+        f"<p><a href='{escape(back)}' style='color:#7cd4ff'>Back to your assistant</a></p>"
     )
     return HTMLResponse(body, status_code=code)
 
@@ -62,4 +67,9 @@ def callback(
         _manager(request).handle_callback(provider, code, state)
     except IntegrationError as exc:
         return _page("Not connected", str(exc), 400)
-    return _page("Connected", f"Your {provider} account is connected. You can close this tab.", 200)
+    return _page(
+        "Connected",
+        f"Your {provider} account is connected. Taking you back to your assistant…",
+        200,
+        back=f"/?connected={provider}",
+    )

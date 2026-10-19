@@ -272,6 +272,18 @@ class OAuthStateRow(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
+class ProviderAppRow(TimestampMixin, Base):
+    """OAuth app keys (client id and secret) entered in the app instead of ``.env``.
+    The secret is encrypted at rest with Fernet."""
+
+    __tablename__ = "provider_apps"
+
+    provider: Mapped[str] = mapped_column(String(32), primary_key=True)
+    client_id: Mapped[str] = mapped_column(String(256))
+    client_secret_enc: Mapped[str] = mapped_column(Text)
+    tenant_id: Mapped[str | None] = mapped_column(String(64))
+
+
 class SyncStateRow(TimestampMixin, Base):
     """Incremental-sync cursors (sync tokens, delta links) per adapter and feed."""
 

@@ -93,7 +93,7 @@ h1, h2, h3, p, ul, ol {
   margin: 0;
 }
 
-button, input {
+button, input, select {
   font: inherit;
   color: inherit;
 }
@@ -1316,6 +1316,72 @@ a {
 .error {
   color: var(--danger);
   font-size: 0.86rem;
+}
+
+/* ---------- Accounts ---------- */
+
+.accounts-list {
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.account[data-connected="true"] {
+  border-color: rgba(60, 242, 165, 0.35);
+  box-shadow: inset 0 0 18px rgba(60, 242, 165, 0.06);
+}
+
+.account-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.account-name { font-weight: 600; }
+
+.account-desc {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.account-status {
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+}
+
+.account[data-connected="true"] .account-status { color: var(--ok); }
+
+.account .btn { flex: none; }
+
+.app-keys summary {
+  cursor: pointer;
+  color: var(--cyan);
+  font-size: 0.9rem;
+}
+
+.app-keys[open] summary { margin-bottom: 10px; }
+
+.app-keys form { gap: 8px; }
+
+.select {
+  min-height: 42px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text);
 }
 
 /* ---------- Motion preferences ---------- */

@@ -4,7 +4,7 @@
 
 const TOKEN = 'test-token-123';
 
-const API_PREFIXES = ['/auth/', '/brief/', '/converse', '/actions', '/followups', '/stt', '/tts', '/push/', '/health'];
+const API_PREFIXES = ['/auth/', '/brief/', '/converse', '/actions', '/followups', '/stt', '/tts', '/push/', '/health', '/accounts'];
 
 const SAMPLE_BRIEF = {
   kind: 'morning',
@@ -75,6 +75,29 @@ function converseReply(text, extra = {}) {
   };
 }
 
+/** The /accounts response. `connected` and `configured` list account and provider ids. */
+function accountsBody({ connected = [], configured = [], redirect = 'http://127.0.0.1:4173' } = {}) {
+  const kinds = [
+    ['google', 'Google', 'Gmail and Google Calendar', 'google'],
+    ['outlook', 'Outlook', 'Outlook email and calendar', 'microsoft'],
+    ['teams', 'Microsoft Teams', 'Read and send your Teams chats (work or school account)', 'microsoft'],
+  ];
+  return {
+    oauth_ready: true,
+    accounts: kinds.map(([id, name, description, provider]) => ({
+      id, name, description, provider, connected: connected.includes(id), ready: configured.includes(provider),
+    })),
+    providers: ['google', 'microsoft'].map((id) => ({
+      id,
+      name: id === 'google' ? 'Google' : 'Microsoft',
+      configured: configured.includes(id),
+      keys_source: configured.includes(id) ? 'app' : null,
+      redirect_uri: `${redirect}/oauth/${id}/callback`,
+      tenant_id: null,
+    })),
+  };
+}
+
 function isApiUrl(url) {
   return API_PREFIXES.some((p) => url.pathname === p.replace(/\/$/, '') || url.pathname.startsWith(p));
 }
@@ -82,7 +105,7 @@ function isApiUrl(url) {
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 };
 
 /**
@@ -103,6 +126,7 @@ async function mockApi(page, overrides = {}) {
     'GET /push/vapid-public-key': () => ({ json: { key: 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U' } }),
     'POST /push/subscribe': () => ({ status: 201, json: { ok: true } }),
     'GET /health': () => ({ json: { status: 'ok' } }),
+    'GET /accounts': () => ({ json: accountsBody() }),
   };
 
   await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.abort());
@@ -319,6 +343,7 @@ function findCalls(calls, method, path) {
 }
 
 module.exports = {
+  accountsBody,
   TOKEN,
   SAMPLE_BRIEF,
   SAMPLE_PENDING,

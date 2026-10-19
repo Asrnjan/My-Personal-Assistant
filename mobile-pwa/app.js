@@ -62,6 +62,7 @@ const state = {
   pending: new Map(),
   followups: [],
   turns: [],
+  accounts: null,
   orb: 'idle',
   recognition: null,
   recorder: null,
@@ -1006,6 +1007,131 @@ async function refreshPushState() {
   }
 }
 
+// ---------------------------------------------------------------- accounts
+
+const PROVIDER_LABELS = { google: 'Google', microsoft: 'Microsoft' };
+
+async function loadAccounts() {
+  if (!getToken()) {
+    $('accounts-list').replaceChildren(h('li', { class: 'hint', text: 'Sign in above to connect accounts.' }));
+    return;
+  }
+  try {
+    state.accounts = await api('/accounts');
+  } catch (err) {
+    $('accounts-list').replaceChildren(h('li', { class: 'error', text: err.message }));
+    return;
+  }
+  renderAccounts();
+}
+
+function renderAccounts() {
+  const data = state.accounts;
+  if (!data) return;
+  const note = $('accounts-note');
+  note.hidden = true;
+  if (!data.oauth_ready) {
+    note.textContent = 'Accounts can\'t be connected yet: FERNET_KEY is missing in the server\'s .env file.';
+    note.hidden = false;
+  } else {
+    // The sign-in page sends you back to the server's own address. If this app runs on a
+    // different one (a phone through a tunnel), connect from the computer instead.
+    const back = data.providers.length ? new URL(data.providers[0].redirect_uri) : null;
+    if (back && back.origin !== location.origin) {
+      note.textContent = `Sign-in returns to ${back.origin}. Connect from a browser on that computer; once connected, the account works everywhere.`;
+      note.hidden = false;
+    }
+  }
+  $('accounts-list').replaceChildren(...data.accounts.map((a) => {
+    let button;
+    if (a.connected) {
+      button = h('button', { type: 'button', class: 'btn btn-ghost', text: 'Disconnect', onclick: () => disconnectAccount(a) });
+    } else if (a.ready) {
+      button = h('button', { type: 'button', class: 'btn btn-primary', text: 'Connect', onclick: () => connectAccount(a) });
+    } else {
+      button = h('button', { type: 'button', class: 'btn btn-ghost', text: 'Set up', disabled: !data.oauth_ready, onclick: () => openAppKeys(a.provider) });
+    }
+    button.setAttribute('aria-label', `${button.textContent} ${a.name}`);
+    return h('li', { class: 'account', 'data-account': a.id, 'data-connected': String(a.connected) },
+      h('div', { class: 'account-text' },
+        h('span', { class: 'account-name', text: a.name }),
+        h('span', { class: 'account-desc', text: a.description }),
+        h('span', { class: 'account-status', text: a.connected ? 'Connected' : (a.ready ? 'Not connected' : 'Needs one-time setup') })),
+      button);
+  }));
+  syncAppKeysForm();
+}
+
+async function connectAccount(account) {
+  try {
+    const data = await api(`/accounts/${account.id}/connect`, { method: 'POST' });
+    location.assign(data.authorization_url);
+  } catch (err) {
+    toast(err.message, { variant: 'error', title: account.name });
+  }
+}
+
+async function disconnectAccount(account) {
+  const shared = account.provider === 'microsoft' ? ' Outlook and Teams share one Microsoft sign-in, so both will disconnect.' : '';
+  if (!window.confirm(`Disconnect ${account.name}?${shared}`)) return;
+  try {
+    await api(`/accounts/${account.id}`, { method: 'DELETE' });
+    toast(`${account.name} disconnected.`);
+    await loadAccounts();
+  } catch (err) {
+    toast(err.message, { variant: 'error', title: account.name });
+  }
+}
+
+function openAppKeys(provider) {
+  $('app-provider').value = provider;
+  $('app-keys').open = true;
+  syncAppKeysForm();
+  $('app-client-id').focus();
+}
+
+function syncAppKeysForm() {
+  const provider = $('app-provider').value;
+  const info = state.accounts && state.accounts.providers.find((p) => p.id === provider);
+  $('redirect-uri').value = info ? info.redirect_uri : '';
+  $('tenant-row').hidden = provider !== 'microsoft';
+  if (provider === 'microsoft' && info && info.tenant_id) $('app-tenant').value = info.tenant_id;
+  const label = PROVIDER_LABELS[provider];
+  $('app-keys-state').textContent = info && info.configured
+    ? `${label} keys are set${info.keys_source === 'env' ? ' in .env' : ''}. Saving new ones replaces them.`
+    : '';
+}
+
+async function onSaveAppKeys(event) {
+  event.preventDefault();
+  const provider = $('app-provider').value;
+  const body = {
+    client_id: $('app-client-id').value.trim(),
+    client_secret: $('app-client-secret').value.trim(),
+  };
+  if (provider === 'microsoft') body.tenant_id = $('app-tenant').value.trim() || null;
+  if (!body.client_id || !body.client_secret) return;
+  try {
+    await api(`/accounts/apps/${provider}`, { method: 'PUT', body });
+    $('app-client-secret').value = '';
+    $('app-keys').open = false;
+    toast(`${PROVIDER_LABELS[provider]} keys saved. Now tap Connect.`, { variant: 'ok', title: 'Saved' });
+    await loadAccounts();
+  } catch (err) {
+    toast(err.message, { variant: 'error', title: 'Keys not saved' });
+  }
+}
+
+async function copyRedirect() {
+  const value = $('redirect-uri').value;
+  try {
+    await navigator.clipboard.writeText(value);
+    toast('Redirect URI copied.');
+  } catch {
+    $('redirect-uri').select();
+  }
+}
+
 // ---------------------------------------------------------------- auth + settings
 
 function requireAuth() {
@@ -1033,6 +1159,7 @@ function openSettings() {
     else dialog.setAttribute('open', '');
   }
   if (!getToken()) $('secret-input').focus();
+  loadAccounts();
 }
 
 async function onLogin(event) {
@@ -1137,6 +1264,9 @@ function bindUi() {
   $('api-form').addEventListener('submit', onSaveApiBase);
   $('logout-btn').addEventListener('click', onLogout);
   $('push-btn').addEventListener('click', enablePush);
+  $('app-keys-form').addEventListener('submit', onSaveAppKeys);
+  $('app-provider').addEventListener('change', syncAppKeysForm);
+  $('copy-redirect').addEventListener('click', copyRedirect);
   $('refresh-brief').addEventListener('click', () => loadBrief());
   $('refresh-followups').addEventListener('click', () => loadFollowups());
   $('tell-more').addEventListener('click', tellMore);
@@ -1182,7 +1312,15 @@ function init() {
 
   const params = new URLSearchParams(location.search);
   const autostart = params.get('autostart') === 'brief';
-  if (autostart) {
+  // Back from a Google or Microsoft sign-in (see /oauth/<provider>/callback).
+  const connected = params.get('connected');
+  if (connected) {
+    params.delete('connected');
+    const label = PROVIDER_LABELS[connected] || 'Your account';
+    toast(`${label} is connected. Your assistant will start using it within a few minutes.`, { title: 'Connected', variant: 'ok' });
+    if (getToken()) openSettings();
+  }
+  if (autostart || connected) {
     params.delete('autostart');
     const qs = params.toString();
     history.replaceState(null, '', `${location.pathname}${qs ? `?${qs}` : ''}${location.hash}`);

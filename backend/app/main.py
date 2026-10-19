@@ -16,6 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app import __version__
 from app.api import (
     auth,
+    routes_accounts,
     routes_brief,
     routes_converse,
     routes_health,
@@ -48,7 +49,13 @@ from app.integrations.notify.base import Notifier
 from app.integrations.notify.registry import build_notifiers, telegram_api
 from app.integrations.notify.telegram import TelegramApi
 from app.integrations.notify.telegram_bot import TelegramBot
-from app.integrations.oauth import OAuthManager, TokenStore, google_provider, microsoft_provider
+from app.integrations.oauth import (
+    AppKeyStore,
+    OAuthManager,
+    TokenStore,
+    google_provider,
+    microsoft_provider,
+)
 from app.integrations.registry import Adapters, build_adapters
 from app.llm.client import AnthropicSender, LLMClient, MessageSender
 from app.llm.usage import BudgetGuard, UsageLedger
@@ -93,11 +100,13 @@ def create_app(
     oauth: OAuthManager | None = None
     fernet_key = settings.fernet_key.get_secret_value()
     if fernet_key:
+        cipher = TokenCipher(fernet_key)
         oauth = OAuthManager(
             {"google": google_provider(settings), "microsoft": microsoft_provider(settings)},
-            TokenStore(session_factory, TokenCipher(fernet_key), clock),
+            TokenStore(session_factory, cipher, clock),
             session_factory,
             settings.public_base_url,
+            app_keys=AppKeyStore(session_factory, cipher, clock),
             clock=clock,
         )
 
@@ -225,6 +234,7 @@ def create_app(
     app.include_router(auth.router)
     app.include_router(routes_usage.router)
     app.include_router(routes_oauth.router)
+    app.include_router(routes_accounts.router)
     app.include_router(routes_items.router)
     app.include_router(routes_brief.router)
     app.include_router(routes_converse.router)

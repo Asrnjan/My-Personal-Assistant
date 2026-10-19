@@ -6,7 +6,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.clock import Clock, utc_now
 from app.config import Settings
-from app.db.models import OAuthStateRow, OAuthTokenRow
+from app.db.models import OAuthStateRow, OAuthTokenRow, ProviderAppRow
 from app.integrations.http import AuthExpiredError, IntegrationError
 from app.security import TokenCipher
 
@@ -37,6 +37,8 @@ MICROSOFT_SCOPES = (
     "Mail.ReadWrite",
     "Mail.Send",
 )
+# Teams chats need a work or school account. User.ReadBasic.All finds people by name.
+TEAMS_SCOPES = ("Chat.ReadWrite", "User.ReadBasic.All")
 
 
 @dataclass(frozen=True)
@@ -64,15 +66,73 @@ def google_provider(settings: Settings) -> OAuthProvider:
 
 
 def microsoft_provider(settings: Settings) -> OAuthProvider:
-    base = f"https://login.microsoftonline.com/{settings.ms_tenant_id}/oauth2/v2.0"
+    return replace(
+        _microsoft_endpoints(settings.ms_tenant_id),
+        client_id=settings.ms_client_id,
+        client_secret=settings.ms_client_secret.get_secret_value(),
+    )
+
+
+def _microsoft_endpoints(tenant: str) -> OAuthProvider:
+    base = f"https://login.microsoftonline.com/{tenant or 'common'}/oauth2/v2.0"
     return OAuthProvider(
         name="microsoft",
         authorize_url=f"{base}/authorize",
         token_url=f"{base}/token",
-        client_id=settings.ms_client_id,
-        client_secret=settings.ms_client_secret.get_secret_value(),
+        client_id="",
+        client_secret="",
         scopes=MICROSOFT_SCOPES,
     )
+
+
+@dataclass(frozen=True)
+class AppKeys:
+    client_id: str
+    client_secret: str
+    tenant_id: str | None = None
+
+
+def with_app_keys(provider: OAuthProvider, keys: AppKeys) -> OAuthProvider:
+    """The provider with keys entered in the app; Microsoft also takes their tenant."""
+    if provider.name == "microsoft" and keys.tenant_id:
+        endpoints = _microsoft_endpoints(keys.tenant_id)
+        provider = replace(
+            provider, authorize_url=endpoints.authorize_url, token_url=endpoints.token_url
+        )
+    return replace(provider, client_id=keys.client_id, client_secret=keys.client_secret)
+
+
+class AppKeyStore:
+    """OAuth app keys saved from the app, so nobody has to edit ``.env``."""
+
+    def __init__(
+        self, session_factory: sessionmaker[Session], cipher: TokenCipher, clock: Clock = utc_now
+    ) -> None:
+        self._sessions = session_factory
+        self._cipher = cipher
+        self._clock = clock
+
+    def save(self, provider: str, keys: AppKeys) -> None:
+        with self._sessions.begin() as s:
+            row = s.get(ProviderAppRow, provider) or ProviderAppRow(provider=provider)
+            row.client_id = keys.client_id
+            row.client_secret_enc = self._cipher.encrypt(keys.client_secret)
+            row.tenant_id = keys.tenant_id or None
+            row.updated_at = self._clock()
+            s.add(row)
+
+    def load(self, provider: str) -> AppKeys | None:
+        with self._sessions() as s:
+            row = s.get(ProviderAppRow, provider)
+            if row is None:
+                return None
+            return AppKeys(
+                row.client_id, self._cipher.decrypt(row.client_secret_enc), row.tenant_id
+            )
+
+    def delete(self, provider: str) -> None:
+        with self._sessions.begin() as s:
+            s.execute(delete(ProviderAppRow).where(ProviderAppRow.provider == provider))
 
 
 @dataclass(frozen=True)
@@ -137,30 +197,64 @@ class OAuthManager:
         session_factory: sessionmaker[Session],
         public_base_url: str,
         *,
+        app_keys: AppKeyStore | None = None,
         clock: Clock = utc_now,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._providers = providers
+        self._app_keys = app_keys
         self._store = store
         self._sessions = session_factory
         self._base_url = public_base_url.rstrip("/")
         self._clock = clock
         self._http = httpx.Client(timeout=30.0, transport=transport)
 
-    def provider(self, name: str) -> OAuthProvider:
+    @property
+    def app_keys(self) -> AppKeyStore | None:
+        return self._app_keys
+
+    def _resolve(self, name: str) -> OAuthProvider:
         try:
             p = self._providers[name]
         except KeyError:
             raise IntegrationError("oauth", f"unknown provider {name!r}") from None
+        # Keys saved in the app win over .env, so they can be changed without a restart.
+        keys = self._app_keys.load(name) if self._app_keys is not None else None
+        return with_app_keys(p, keys) if keys else p
+
+    def provider(self, name: str) -> OAuthProvider:
+        p = self._resolve(name)
         if not p.client_id or not p.client_secret:
             raise IntegrationError("oauth", f"{name} client id/secret are not configured")
         return p
 
+    def is_configured(self, name: str) -> bool:
+        p = self._resolve(name)
+        return bool(p.client_id and p.client_secret)
+
+    def keys_source(self, name: str) -> str | None:
+        """'app' when the keys were saved in the app, 'env' when they come from .env."""
+        if self._app_keys is not None and self._app_keys.load(name):
+            return "app"
+        p = self._providers.get(name)
+        return "env" if p and p.client_id and p.client_secret else None
+
     def redirect_uri(self, name: str) -> str:
         return f"{self._base_url}/oauth/{name}/callback"
 
-    def authorization_url(self, name: str) -> str:
+    def granted_scopes(self, name: str) -> set[str]:
+        """Scopes on the stored token, lower-cased and without any resource URL prefix."""
+        tokens = self._store.load(name)
+        if tokens is None:
+            return set()
+        return {scope.rsplit("/", 1)[-1].lower() for scope in tokens.scopes.split()}
+
+    def disconnect(self, name: str) -> None:
+        self._store.delete(name)
+
+    def authorization_url(self, name: str, extra_scopes: tuple[str, ...] = ()) -> str:
         p = self.provider(name)
+        scopes = list(dict.fromkeys((*p.scopes, *extra_scopes)))
         state = secrets.token_urlsafe(32)
         verifier, challenge = _pkce_pair()
         with self._sessions.begin() as s:
@@ -173,7 +267,7 @@ class OAuthManager:
             "client_id": p.client_id,
             "response_type": "code",
             "redirect_uri": self.redirect_uri(name),
-            "scope": " ".join(p.scopes),
+            "scope": " ".join(scopes),
             "state": state,
             "code_challenge": challenge,
             "code_challenge_method": "S256",
