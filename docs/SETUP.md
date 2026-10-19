@@ -137,6 +137,7 @@ mkdir -p ../voices
 1. Make the backend reachable from your phone over HTTPS: see [DEPLOY.md](DEPLOY.md) (Cloudflare Tunnel is free and takes about ten minutes).
 2. **Android (Chrome):** open your assistant's URL, tap **⋮ → Add to Home screen → Install**.
 3. **iPhone (iOS 16.4 or later, Safari):** open the URL, tap **Share → Add to Home Screen**, then open the app from the home screen icon. Notifications only work from the installed icon, not from a Safari tab.
+   On iPhone, tapping the orb records your voice and the backend transcribes it with faster-whisper (Safari's own speech recognition hangs in home-screen apps). It stops by itself when you go quiet, or tap the orb again. The first time, the backend downloads the speech model, so the first answer can take a minute.
 4. Open the app, tap the gear, and enter your `API_AUTH_TOKEN` as the shared secret. Leave **API base URL** empty: the backend serves the app, so they share one address.
 5. Tap **Enable push notifications** in Settings to get the morning brief, evening wrap-up and P1 alerts as notifications. This needs Web Push keys on the backend:
 

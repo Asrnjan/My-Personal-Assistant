@@ -71,6 +71,38 @@ test('without SpeechRecognition, audio is recorded and uploaded to /stt', async 
   await expect.poll(() => page.evaluate(() => window.__spoken)).toContain(REPLY);
 });
 
+test('a heard phrase is sent even when recognition never marks it final', async ({ page }) => {
+  const { calls } = await setup(page, { overrides: { 'POST /converse': () => ({ json: converseReply(REPLY) }) } });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
+  await page.evaluate((text) => window.__recognitions[0].__hear(text), SAID);
+  await page.getByRole('button', { name: 'Stop listening' }).click();
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length).toBe(1);
+  expect(findCalls(calls, 'POST', '/converse')[0].body.text).toBe(SAID);
+});
+
+test.describe('on iPhone', () => {
+  test.use({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1' });
+
+  test('voice is recorded and transcribed by the server even though Safari has SpeechRecognition', async ({ page }) => {
+    const { calls } = await setup(page, {
+      speech: { recognition: true, mediaRecorder: true },
+      overrides: {
+        'POST /stt': () => ({ json: { text: SAID } }),
+        'POST /converse': () => ({ json: converseReply(REPLY) }),
+      },
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Start talking' }).click();
+    await expect(page.locator('#orb')).toHaveAttribute('data-state', 'listening');
+    await page.getByRole('button', { name: 'Stop listening' }).click();
+    await expect.poll(() => findCalls(calls, 'POST', '/stt').length).toBe(1);
+    await expect.poll(() => findCalls(calls, 'POST', '/converse').length).toBe(1);
+    expect(await page.evaluate(() => window.__recognitions.length)).toBe(0);
+  });
+});
+
 test('pushed WebSocket events show a toast and refresh the brief', async ({ page }) => {
   const { socket } = await setup(page);
   await page.goto('/');

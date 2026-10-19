@@ -229,6 +229,11 @@ async function stubSpeech(page, options = {}) {
         abort() {
           this.stop();
         }
+        __hear(text) {
+          const result = [{ transcript: text, confidence: 0.5 }];
+          result.isFinal = false;
+          this.onresult({ resultIndex: 0, results: [result] });
+        }
         __say(text) {
           const alternative = { transcript: text, confidence: 0.97 };
           const result = [alternative];

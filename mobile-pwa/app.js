@@ -52,6 +52,9 @@ const ORB_ARIA = {
 
 const MAX_TURNS = 6;
 const RECORD_LIMIT_MS = 15000;
+// Recording stops by itself after this much quiet once you have started speaking.
+const SILENCE_STOP_MS = 1500;
+const SILENCE_LEVEL = 0.02;
 
 const state = {
   brief: null,
@@ -354,7 +357,9 @@ function onOrbClick() {
 }
 
 function startListening() {
-  const Ctor = getRecognitionCtor();
+  // iOS exposes webkitSpeechRecognition, but in a home-screen app it often never returns
+  // a result, so the orb hangs on "Listening". Record and let the server transcribe.
+  const Ctor = isIos() ? null : getRecognitionCtor();
   if (Ctor) startRecognition(Ctor);
   else startRecording();
 }
@@ -368,7 +373,14 @@ function stopListening() {
 
 function startRecognition(Ctor) {
   let finalText = '';
+  let interimText = '';
   let handled = false;
+  const send = (text) => {
+    handled = true;
+    state.recognition = null;
+    try { rec.stop(); } catch { /* ignore */ }
+    sendText(text, { source: 'voice' });
+  };
   const rec = new Ctor();
   state.recognition = rec;
   rec.lang = navigator.language || 'en-US';
@@ -383,13 +395,9 @@ function startRecognition(Ctor) {
       if (result.isFinal) finalText += result[0].transcript;
       else interim += result[0].transcript;
     }
+    interimText = interim;
     setCaption(finalText || interim);
-    if (finalText.trim() && !handled) {
-      handled = true;
-      state.recognition = null;
-      try { rec.stop(); } catch { /* ignore */ }
-      sendText(finalText.trim(), { source: 'voice' });
-    }
+    if (finalText.trim() && !handled) send(finalText.trim());
   };
   rec.onerror = (event) => {
     const err = event && event.error;
@@ -403,6 +411,11 @@ function startRecognition(Ctor) {
   };
   rec.onend = () => {
     if (state.recognition === rec) state.recognition = null;
+    // Some engines end without ever marking a result final; use what was heard.
+    if (!handled && interimText.trim()) {
+      send(interimText.trim());
+      return;
+    }
     if (!handled && state.orb === 'listening') {
       setOrb('idle');
       setCaption('');
@@ -448,8 +461,12 @@ async function startRecording() {
   recorder.ondataavailable = (event) => {
     if (event.data && event.data.size) chunks.push(event.data);
   };
+  const stopOnSilence = watchSilence(stream, () => {
+    if (recorder.state !== 'inactive') recorder.stop();
+  });
   recorder.onstop = async () => {
     clearTimeout(state.recordTimer);
+    stopOnSilence();
     state.recorder = null;
     stream.getTracks().forEach((t) => t.stop());
     const type = recorder.mimeType || mimeType || 'audio/webm';
@@ -484,10 +501,54 @@ async function startRecording() {
   };
   recorder.start();
   setOrb('listening');
-  setCaption('Recording… tap the orb to send.');
+  setCaption('Listening… tap the orb when you finish.');
   state.recordTimer = setTimeout(() => {
     if (recorder.state !== 'inactive') recorder.stop();
   }, RECORD_LIMIT_MS);
+}
+
+// Calls onSilence once the speaker has talked and then gone quiet. Returns a cleanup function.
+function watchSilence(stream, onSilence) {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return () => {};
+  let ctx;
+  try {
+    ctx = new Ctx();
+  } catch {
+    return () => {};
+  }
+  // Safari may create the context suspended because it starts after an await.
+  if (ctx.resume) ctx.resume().catch(() => {});
+  let analyser;
+  try {
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+  } catch {
+    ctx.close().catch(() => {});
+    return () => {};
+  }
+  const samples = new Float32Array(analyser.fftSize);
+  let heard = false;
+  let quietSince = 0;
+  const timer = setInterval(() => {
+    analyser.getFloatTimeDomainData(samples);
+    let sum = 0;
+    for (const v of samples) sum += v * v;
+    const level = Math.sqrt(sum / samples.length);
+    const now = Date.now();
+    if (level > SILENCE_LEVEL) {
+      heard = true;
+      quietSince = 0;
+    } else if (heard) {
+      if (!quietSince) quietSince = now;
+      else if (now - quietSince >= SILENCE_STOP_MS) onSilence();
+    }
+  }, 100);
+  return () => {
+    clearInterval(timer);
+    ctx.close().catch(() => {});
+  };
 }
 
 // ---------------------------------------------------------------- conversation
