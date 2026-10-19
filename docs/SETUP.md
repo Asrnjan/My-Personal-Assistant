@@ -160,7 +160,7 @@ To start the brief by voice ("Hey Siri, daily brief"), see [VOICE_SHORTCUTS.md](
 pipx install "./desktop[voice,tray]"     # or: uv tool install "./desktop[voice,tray]"
 ```
 
-Linux needs PortAudio first (`sudo apt install libportaudio2`). Copy `desktop/desktop.example.toml` to `~/.config/ceo-assistant/desktop.toml` and set `backend.url` and `backend.secret` (your `API_AUTH_TOKEN`). Download a Piper voice as in section 11, then run `assistant-desktop --check` and `assistant-desktop`. Say "hey jarvis" or press Ctrl+Alt+Space. Full details: [desktop/README.md](../desktop/README.md).
+Linux needs PortAudio first (`sudo apt install libportaudio2`). Copy `desktop/desktop.example.toml` to `~/.config/ceo-assistant/desktop.toml` and set `backend.url` and `backend.secret` (your `API_AUTH_TOKEN`). Download a Piper voice as in section 11, then run `assistant-desktop --check` and `assistant-desktop`. Say "Atlas" or press Ctrl+Alt+Space. Full details: [desktop/README.md](../desktop/README.md).
 
 ## Checking what is connected
 

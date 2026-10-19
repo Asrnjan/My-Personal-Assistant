@@ -42,6 +42,7 @@ def test_search_then_reply_reads_back_and_sends_after_yes(harness: Harness) -> N
     assert "message_id=g-1" in result["emails"] and "g-2" not in result["emails"]
     assert '<untrusted source="email">' in result["emails"]
     assert found["pending_actions"] == []
+    assert "Your name is Atlas." in str(harness.sender.calls[-1]["system"])
 
     harness.sender.queue(
         tool_call("reply_email", message_id="g-1", source="gmail", text="Monday works."),

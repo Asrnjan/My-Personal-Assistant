@@ -19,6 +19,7 @@ is safe to call from the hotkey, tray and audio threads.
 
 from __future__ import annotations
 
+import difflib
 import enum
 import logging
 import math
@@ -31,9 +32,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
+import numpy as np
 from numpy.typing import NDArray
 
-from assistant_desktop.audio import Int16Array
+from assistant_desktop.audio import Int16Array, rms_dbfs
 from assistant_desktop.stt import NoiseFloor, Utterance
 
 log = logging.getLogger(__name__)
@@ -205,7 +207,16 @@ class WakeWordHandler:
             self._jobs.put(_Job("turn"))
         return True
 
-    def submit_text(self, text: str) -> bool:
+    def wake_with_request(self, text: str) -> bool:
+        """The name and a request in one breath ("Atlas, brief me")."""
+        with self._lock:
+            now = self._clock()
+            if self._state is not State.IDLE or now - self._idle_since < self.cooldown_seconds:
+                return False
+            self._last_trigger = now
+        return self.submit_text(text, spoken=True)
+
+    def submit_text(self, text: str, *, spoken: bool = False) -> bool:
         """A typed request; skips listening and speech-to-text."""
         text = text.strip()
         if not text:
@@ -214,7 +225,7 @@ class WakeWordHandler:
             if self._state is not State.IDLE:
                 return False
             self._set_state(State.THINKING, "typed")
-        self._notify(State.THINKING, "typed")
+        self._notify(State.THINKING, "spoken" if spoken else "typed")
         self._jobs.put(_Job("text", text))
         return True
 
@@ -398,6 +409,113 @@ class OpenWakeWordDetector:
             self._model.reset()
 
 
+OPENWAKEWORD_MODELS = frozenset({"alexa", "hey_mycroft", "hey_jarvis", "hey_rhasspy"})
+
+
+def uses_openwakeword(phrase: str, engine: str = "auto") -> bool:
+    """openWakeWord for its own models and model files; Whisper for any other name."""
+    if engine != "auto":
+        return engine == "openwakeword"
+    return phrase.endswith((".onnx", ".tflite")) or phrase_to_model(phrase) in OPENWAKEWORD_MODELS
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9']+", text.lower())
+
+
+def match_name(text: str, name: str, *, within: int = 3, cutoff: float = 0.8) -> str | None:
+    """What follows the name when ``text`` starts with it ("Hey Atlas, brief me" ->
+    "brief me"), or ``None``. Whisper writes a name several ways ("at last",
+    "Atlus"), so the comparison is fuzzy and may join two words."""
+    words = _words(text)
+    target = "".join(_words(name))
+    if not target:
+        return None
+    for start in range(min(within, len(words))):
+        for span in (1, 2, 3):
+            heard = "".join(words[start : start + span])
+            if abs(len(heard) - len(target)) > max(1, len(target) // 4):
+                continue  # "an atlas" is not the name said on its own
+            if difflib.SequenceMatcher(None, heard, target).ratio() >= cutoff:
+                return " ".join(words[start + span :])
+    return None
+
+
+class SpokenNameDetector:
+    """Hears a name with Whisper, so the assistant can be called anything.
+
+    Each burst of speech (louder than the room, ended by a short silence) is
+    transcribed with the same model that transcribes requests; it fires when
+    the burst starts with the name. Anything said after the name in the same
+    breath is kept in :attr:`request`, so "Atlas, brief me" is one step.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        transcriber: Transcriber,
+        *,
+        sample_rate: int = 16_000,
+        noise: NoiseFloor | None = None,
+        threshold_dbfs: float = -45.0,
+        margin_db: float = 10.0,
+        silence_seconds: float = 0.6,
+        min_seconds: float = 0.25,
+        max_seconds: float = 8.0,
+    ) -> None:
+        self.name = name
+        self.request = ""
+        self._transcriber = transcriber
+        self._rate = sample_rate
+        self._noise = noise
+        self._threshold = threshold_dbfs
+        self._margin = margin_db
+        self._silence_limit = int(silence_seconds * sample_rate)
+        self._min_speech = int(min_seconds * sample_rate)
+        self._max = int(max_seconds * sample_rate)
+        self._frames: list[Int16Array] = []
+        self._speech = 0
+        self._silence = 0
+        self._total = 0
+
+    def _clear(self) -> None:
+        self._frames, self._speech, self._silence, self._total = [], 0, 0, 0
+
+    def reset(self) -> None:
+        self._clear()
+        self.request = ""
+
+    def process(self, frame: Int16Array) -> bool:
+        floor = self._noise.value if self._noise is not None else -90.0
+        loud = rms_dbfs(frame) > max(self._threshold, floor + self._margin)
+        if loud:
+            self._speech += len(frame)
+            self._silence = 0
+        elif not self._frames:
+            return False  # quiet room, nothing started
+        else:
+            self._silence += len(frame)
+        self._frames.append(frame)
+        self._total += len(frame)
+        if self._silence >= self._silence_limit or self._total >= self._max:
+            return self._finish()
+        return False
+
+    def _finish(self) -> bool:
+        audio = np.concatenate(self._frames)
+        enough = self._speech >= self._min_speech
+        self._clear()
+        if not enough:
+            return False
+        text = self._transcriber.transcribe(audio, self._rate)
+        rest = match_name(text, self.name)
+        if rest is None:
+            log.debug("heard %r, not the name", text)
+            return False
+        self.request = rest
+        return True
+
+
 class FrameSource(Protocol):
     def read(self, timeout: float | None = None) -> Int16Array | None: ...
 
@@ -449,8 +567,12 @@ class AudioRouter:
                 self._detector = None
                 return
             if fired:
+                request = str(getattr(self._detector, "request", "") or "")
                 self._detector.reset()
-                self._handler.trigger(Trigger.WAKE_WORD)
+                if request:
+                    self._handler.wake_with_request(request)
+                else:
+                    self._handler.trigger(Trigger.WAKE_WORD)
 
     def run(self) -> None:
         while not self._stop.is_set():

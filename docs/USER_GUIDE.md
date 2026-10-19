@@ -53,7 +53,7 @@ A delegation arrives as an email (and on their Telegram, Slack or Teams if set u
 ## The apps
 
 - **Phone:** tap the orb and speak, or type. Pending actions show **Yes / Cancel** cards; the delegations list shows who accepted.
-- **Desktop:** say "hey jarvis" or press Ctrl+Alt+Space. Press the hotkey again to interrupt it.
+- **Desktop:** say "Atlas" (or "Atlas, brief me") or press Ctrl+Alt+Space. Press the hotkey again to interrupt it.
 - **Telegram:** type or send a voice note; it answers with text and a voice note, and shows **Yes / Cancel** buttons when it needs your confirmation.
 
 ## Privacy and cost

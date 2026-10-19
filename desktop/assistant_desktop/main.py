@@ -46,9 +46,12 @@ from assistant_desktop.wakeword import (
     AudioRouter,
     OpenWakeWordDetector,
     Speaker,
+    SpokenNameDetector,
     State,
     Trigger,
+    WakeDetector,
     WakeWordHandler,
+    uses_openwakeword,
 )
 
 log = logging.getLogger("assistant_desktop")
@@ -116,7 +119,7 @@ class VoiceInput:
     listen_queue: queue.Queue[Int16Array]
     recorder: QueueRecorder
     transcriber: WhisperTranscriber
-    detector: OpenWakeWordDetector | None
+    detector: WakeDetector | None
     noise: NoiseFloor
 
 
@@ -145,27 +148,43 @@ def build_voice_input(config: DesktopConfig) -> VoiceInput | None:
             noise_floor_dbfs=noise.value,
         )
 
-    detector = None
-    if config.wake.enabled:
-        if module_available("openwakeword"):
-            detector = OpenWakeWordDetector(config.wake.phrase, threshold=config.wake.threshold)
-        else:
-            log.warning("openwakeword is not installed; use the push-to-talk hotkey")
+    transcriber = WhisperTranscriber(
+        config.stt.model,
+        compute_type=config.stt.compute_type,
+        device=config.stt.device,
+        language=config.stt.language_code,
+        vad_filter=config.stt.vad_filter,
+        beam_size=config.stt.beam_size,
+    )
     return VoiceInput(
         mic=mic,
         listen_queue=listen_queue,
         recorder=QueueRecorder(listen_queue, endpointer, sample_rate=mic.sample_rate),
-        transcriber=WhisperTranscriber(
-            config.stt.model,
-            compute_type=config.stt.compute_type,
-            device=config.stt.device,
-            language=config.stt.language_code,
-            vad_filter=config.stt.vad_filter,
-            beam_size=config.stt.beam_size,
-        ),
-        detector=detector,
+        transcriber=transcriber,
+        detector=build_detector(config, transcriber, noise, mic.sample_rate),
         noise=noise,
     )
+
+
+def build_detector(
+    config: DesktopConfig, transcriber: WhisperTranscriber, noise: NoiseFloor, sample_rate: int
+) -> WakeDetector | None:
+    """The wake word: the assistant's name heard by Whisper, or an openWakeWord model."""
+    wake = config.wake
+    if not wake.enabled:
+        return None
+    if not uses_openwakeword(wake.phrase, wake.engine):
+        return SpokenNameDetector(
+            wake.phrase,
+            transcriber,
+            sample_rate=sample_rate,
+            noise=noise,
+            threshold_dbfs=config.listen.energy_threshold_dbfs,
+        )
+    if module_available("openwakeword"):
+        return OpenWakeWordDetector(wake.phrase, threshold=wake.threshold)
+    log.warning("openwakeword is not installed; use the push-to-talk hotkey")
+    return None
 
 
 class DesktopApp:

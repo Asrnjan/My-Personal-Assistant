@@ -421,7 +421,9 @@ class ConversationAgent:
         tz: tzinfo,
         clock: Clock,
         new_id: Callable[[], str] = lambda: uuid.uuid4().hex,
+        name: str = "Atlas",
     ) -> None:
+        self.name = name
         self._sessions = session_factory
         self._llm = llm
         self._actions = actions
@@ -662,6 +664,8 @@ class ConversationAgent:
         ]
         return [
             load_prompt("conversation").text,
+            f"Your name is {self.name}. The CEO may start a request with your name; "
+            "that is just how they get your attention.",
             "The CEO's team:\n" + json.dumps(team, sort_keys=True),
             "CEO preferences:\n" + ("\n".join(f"- {p}" for p in prefs) or "- none yet"),
         ]

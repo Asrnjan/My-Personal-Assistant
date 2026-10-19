@@ -1,7 +1,8 @@
 # Desktop voice client
 
 `assistant-desktop` is the voice front end for the Chief of Staff backend. Say
-**"hey jarvis"** or press **Ctrl+Alt+Space**, speak, and hear the answer. When
+**"Atlas"** (or "Atlas, brief me" in one go) or press **Ctrl+Alt+Space**, speak,
+and hear the answer. When
 the backend pushes a morning brief or an alert, the client plays a soft chime
 and reads it out.
 
@@ -9,7 +10,7 @@ Everything runs locally and is free/open source:
 
 | Part | Library | Notes |
 |---|---|---|
-| Wake word | [openWakeWord](https://github.com/dscripka/openWakeWord) | default `hey jarvis`, configurable |
+| Wake word | faster-whisper, or [openWakeWord](https://github.com/dscripka/openWakeWord) | default `atlas`: any name works; openWakeWord for its own models |
 | Speech-to-text | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) | default model `small`, `int8` on CPU, Silero VAD |
 | Text-to-speech | [Piper](https://github.com/OHF-Voice/piper1-gpl) (default) or [Kokoro](https://github.com/hexgrad/kokoro) | voice configurable |
 | Audio | [sounddevice](https://python-sounddevice.readthedocs.io/) (PortAudio) | |
@@ -63,7 +64,8 @@ example file lists them all. The ones you usually need:
 |---|---|---|
 | `backend.url` | `CEO_DESKTOP_BACKEND_URL` | `http://127.0.0.1:8000` |
 | `backend.secret` | `CEO_DESKTOP_SECRET` | the backend's `API_AUTH_TOKEN` |
-| `wake.phrase` | `CEO_DESKTOP_WAKE_PHRASE` | `hey jarvis` |
+| `wake.phrase` | `CEO_DESKTOP_WAKE_PHRASE` | `atlas` |
+| `wake.engine` | `CEO_DESKTOP_WAKE_ENGINE` | `auto` (`whisper` for a name, `openwakeword` for its models) |
 | `wake.hotkey` | `CEO_DESKTOP_HOTKEY` | `ctrl+alt+space` |
 | `stt.model` / `stt.compute_type` | `CEO_DESKTOP_STT_MODEL` / `..._COMPUTE_TYPE` | `small` / `int8` |
 | `tts.engine` / `tts.voice` | `CEO_DESKTOP_TTS_ENGINE` / `..._VOICE` | `piper` / `en_US-lessac-medium` |
@@ -152,5 +154,6 @@ replaced by fakes, and audio comes from the short WAV files in
 All components are free and open source. Two caveats: Piper 1.3+ is GPL-3.0
 (fine for personal use; the client only calls it as a library), and
 openWakeWord's pretrained wake word models are licensed CC BY-NC-SA 4.0
-(non-commercial). For commercial use, train your own model with openWakeWord's
-tools and set `wake.phrase` to its `.onnx` path, or rely on the hotkey.
+(non-commercial). The default name (`atlas`) doesn't use them: it is heard by
+Whisper. For an openWakeWord model in commercial use, train your own and set
+`wake.phrase` to its `.onnx` path.

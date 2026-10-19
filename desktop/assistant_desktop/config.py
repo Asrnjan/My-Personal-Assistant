@@ -23,6 +23,7 @@ TOKEN_CACHE_ENV = ENV_PREFIX + "TOKEN_CACHE"
 DEFAULT_BACKEND_URL = "http://127.0.0.1:8000"
 
 TTS_ENGINES = ("piper", "kokoro")
+WAKE_ENGINES = ("auto", "openwakeword", "whisper")
 COMPUTE_TYPES = (
     "default",
     "auto",
@@ -56,7 +57,10 @@ class BackendSettings:
 @dataclass(frozen=True)
 class WakeSettings:
     enabled: bool = True
-    phrase: str = "hey jarvis"
+    # A name ("atlas") is heard with Whisper; openWakeWord's own models
+    # ("hey jarvis") or an .onnx path use openWakeWord. "auto" picks by phrase.
+    phrase: str = "atlas"
+    engine: str = "auto"
     threshold: float = 0.5
     hotkey: str = "ctrl+alt+space"
     cooldown_seconds: float = 1.5
@@ -135,6 +139,7 @@ ENV_VARS: dict[str, tuple[str, str]] = {
     "TOKEN": ("backend", "token"),
     "WAKE_ENABLED": ("wake", "enabled"),
     "WAKE_PHRASE": ("wake", "phrase"),
+    "WAKE_ENGINE": ("wake", "engine"),
     "WAKE_THRESHOLD": ("wake", "threshold"),
     "HOTKEY": ("wake", "hotkey"),
     "STT_MODEL": ("stt", "model"),
@@ -212,6 +217,8 @@ def _validate(config: DesktopConfig) -> None:
         raise ConfigError("wake.threshold must be in (0, 1]")
     if config.wake.enabled and not config.wake.phrase.strip():
         raise ConfigError("wake.phrase must not be empty while the wake word is enabled")
+    if config.wake.engine not in WAKE_ENGINES:
+        raise ConfigError(f"wake.engine must be one of {', '.join(WAKE_ENGINES)}")
     try:
         parse_hotkey(config.wake.hotkey)
     except HotkeyError as exc:

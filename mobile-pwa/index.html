@@ -219,6 +219,17 @@
       </form>
     </section>
 
+    <section class="sheet-section" aria-labelledby="wake-title">
+      <h3 id="wake-title">Call by name</h3>
+      <label class="switch-row" for="wake-toggle">
+        <input id="wake-toggle" type="checkbox" role="switch">
+        <span id="wake-label">Listen for “Atlas” while the app is open</span>
+      </label>
+      <p class="hint">Say the name, or the name and your request in one go: “Atlas, brief me”.</p>
+      <p id="wake-ios" class="hint" hidden>On iPhone, add a Siri shortcut instead and say <strong>“Hey Siri, Atlas”</strong>. Steps: docs/VOICE_SHORTCUTS.md.</p>
+      <p id="wake-unsupported" class="hint warn" hidden>This browser can't listen in the background. Use Chrome, or tap the orb.</p>
+    </section>
+
     <section class="sheet-section" aria-labelledby="push-title">
       <h3 id="push-title">Notifications</h3>
       <p class="hint">Morning brief, evening wrap-up and P1 alerts.</p>

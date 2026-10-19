@@ -35,8 +35,11 @@ models:
 budget:
   monthly_usd: 20.0 # above this, scoring falls back to rules only
 
+# What you call the assistant. The phone and desktop apps listen for it ("Atlas, brief me").
+assistant_name: Atlas
+
 wake_word:
-  phrase: hey jarvis
+  phrase: atlas
   push_to_talk_hotkey: ctrl+alt+space
 
 stt:

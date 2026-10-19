@@ -19,11 +19,14 @@ from assistant_desktop.wakeword import (
     AudioRouter,
     InvalidTransitionError,
     OpenWakeWordDetector,
+    SpokenNameDetector,
     State,
     Trigger,
     WakeWordHandler,
     default_error_text,
+    match_name,
     phrase_to_model,
+    uses_openwakeword,
 )
 
 
@@ -555,3 +558,86 @@ def test_router_run_and_stop(clock: FakeClock) -> None:
     stopper.start()
     router.run()
     stopper.join()
+
+
+# -- the assistant's name, heard by Whisper ---------------------------------
+
+
+@pytest.mark.parametrize(
+    ("heard", "rest"),
+    [
+        ("Atlas.", ""),
+        ("Hey Atlas, brief me.", "brief me"),
+        ("Okay, at last. What's on today?", "what's on today"),
+        ("Atlus decline the 4 pm", "decline the 4 pm"),
+        ("Hmm, so, well, Atlas", None),  # not near the start: just talk in the room
+        ("I read an atlas yesterday", None),
+        ("", None),
+    ],
+)
+def test_match_name(heard: str, rest: str | None) -> None:
+    assert match_name(heard, "Atlas") == rest
+
+
+def test_match_name_needs_a_name() -> None:
+    assert match_name("anything", " ") is None
+
+
+def test_uses_openwakeword() -> None:
+    assert uses_openwakeword("hey jarvis") and uses_openwakeword("~/models/me.onnx")
+    assert not uses_openwakeword("atlas") and not uses_openwakeword("Hey Atlas")
+    assert uses_openwakeword("atlas", "openwakeword")
+    assert not uses_openwakeword("hey jarvis", "whisper")
+
+
+def loud(n: int = 1) -> list[Int16Array]:
+    return [frame(8000) for _ in range(n)]
+
+
+def quiet(n: int = 1) -> list[Int16Array]:
+    return [frame(0) for _ in range(n)]
+
+
+def test_spoken_name_detector_transcribes_bursts() -> None:
+    whisper = FakeTranscriber(["Atlas, brief me", "pass the salt", "Atlas"])
+    detector = SpokenNameDetector("atlas", whisper, silence_seconds=0.16, min_seconds=0.16)
+    results = [detector.process(f) for f in quiet(3) + loud(4) + quiet(2)]
+    assert results == [False] * 8 + [True]
+    assert detector.request == "brief me"
+    detector.reset()
+    assert detector.request == ""
+    assert not any(detector.process(f) for f in loud(3) + quiet(2))  # "pass the salt"
+    assert [detector.process(f) for f in loud(3) + quiet(2)][-1] is True
+    assert detector.request == "" and whisper.texts == []
+
+
+def test_spoken_name_detector_skips_clicks_and_caps_length() -> None:
+    whisper = FakeTranscriber(["Atlas what's next"])
+    detector = SpokenNameDetector(
+        "atlas", whisper, silence_seconds=0.16, min_seconds=0.24, max_seconds=0.8
+    )
+    assert not any(detector.process(f) for f in loud(1) + quiet(2))  # a click: not sent
+    assert [detector.process(f) for f in loud(10)][-1] is True  # long speech is cut off
+    assert detector.request == "what's next"
+
+
+def test_spoken_name_detector_ignores_the_room_noise() -> None:
+    noise = NoiseFloor()
+    for f in loud(5):
+        noise.update(f)  # a loud room: the same level is not speech
+    detector = SpokenNameDetector("atlas", FakeTranscriber([]), noise=noise)
+    assert not any(detector.process(f) for f in loud(20))
+
+
+def test_router_sends_a_request_said_with_the_name(clock: FakeClock) -> None:
+    h = Harness(clock)
+    detector = SpokenNameDetector(
+        "atlas", FakeTranscriber(["Atlas brief me"]), silence_seconds=0.16, min_seconds=0.16
+    )
+    router = AudioRouter(ListSource(loud(3) + quiet(2)), h.handler, queue.Queue(), detector)
+    for _ in range(5):
+        router.pump()
+    assert h.handler.state is State.THINKING
+    assert (State.THINKING, "spoken") in h.states
+    h.handler._set_state(State.IDLE, "forced")
+    assert h.handler.wake_with_request("again") is False  # just went idle: cooldown

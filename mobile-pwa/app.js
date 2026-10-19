@@ -8,6 +8,8 @@ const STORAGE = {
   apiBase: 'cos.apiBase',
   conversation: 'cos.conversationId',
   iosHintDismissed: 'cos.iosHintDismissed',
+  name: 'cos.assistantName',
+  wake: 'cos.listenForName',
 };
 
 const BANDS = {
@@ -80,6 +82,9 @@ const state = {
   wsTimer: null,
   wsPing: null,
   autostartPending: false,
+  name: 'Atlas',
+  wakeRec: null,
+  wakeTimer: null,
 };
 
 // ---------------------------------------------------------------- storage
@@ -222,7 +227,9 @@ function setOrb(next) {
   orb.dataset.state = next;
   orb.setAttribute('aria-label', ORB_ARIA[next]);
   orb.setAttribute('aria-pressed', next === 'listening' ? 'true' : 'false');
-  $('orb-label').textContent = ORB_LABELS[next];
+  $('orb-label').textContent = next === 'idle' && wakeOn() ? `Say “${state.name}” or tap` : ORB_LABELS[next];
+  if (next === 'idle') scheduleWake();
+  else stopWake();
 }
 
 function setCaption(text) {
@@ -364,6 +371,7 @@ function onOrbClick() {
 }
 
 function startListening() {
+  stopWake();
   // iOS exposes webkitSpeechRecognition, but in a home-screen app it often never returns
   // a result, so the orb hangs on "Listening". Record and let the server transcribe.
   const Ctor = isIos() ? null : getRecognitionCtor();
@@ -436,6 +444,132 @@ function startRecognition(Ctor) {
     state.recognition = null;
     setOrb('idle');
     toast('Could not start the microphone.', { variant: 'error' });
+  }
+}
+
+// ---------------------------------------------------------------- the assistant's name
+
+// Speech engines write a name several ways ("at last", "Atlus"), so compare loosely.
+function similarity(a, b) {
+  const rows = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) rows[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      rows[i][j] = Math.min(rows[i - 1][j] + 1, rows[i][j - 1] + 1, rows[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+  }
+  return 1 - rows[a.length][b.length] / Math.max(a.length, b.length, 1);
+}
+
+// What follows the name when the phrase starts with it ("Hey Atlas, brief me" -> "brief me"),
+// or null when the name wasn't said.
+function matchName(text, name) {
+  const words = (text || '').toLowerCase().match(/[a-z0-9']+/g) || [];
+  const target = ((name || '').toLowerCase().match(/[a-z0-9']+/g) || []).join('');
+  if (!target) return null;
+  for (let start = 0; start < Math.min(3, words.length); start++) {
+    for (let span = 1; span <= 3; span++) {
+      const heard = words.slice(start, start + span).join('');
+      if (Math.abs(heard.length - target.length) > Math.max(1, Math.floor(target.length / 4))) continue;
+      if (similarity(heard, target) >= 0.8) return words.slice(start + span).join(' ');
+    }
+  }
+  return null;
+}
+
+// Listening for the name works where the browser recognises speech continuously
+// (Chrome on Android and computers). iPhone uses "Hey Siri, <name>" instead.
+function wakeSupported() {
+  return !isIos() && Boolean(getRecognitionCtor());
+}
+
+function wakeOn() {
+  return wakeSupported() && load(STORAGE.wake) === '1' && Boolean(getToken());
+}
+
+function scheduleWake() {
+  clearTimeout(state.wakeTimer);
+  if (!wakeOn() || state.wakeRec) return;
+  state.wakeTimer = setTimeout(startWake, 400);
+}
+
+function stopWake() {
+  clearTimeout(state.wakeTimer);
+  const rec = state.wakeRec;
+  state.wakeRec = null;
+  if (rec) {
+    try { rec.abort(); } catch { /* already stopped */ }
+  }
+}
+
+function startWake() {
+  if (!wakeOn() || state.wakeRec || state.orb !== 'idle' || document.visibilityState === 'hidden') return;
+  const rec = new (getRecognitionCtor())();
+  state.wakeRec = rec;
+  rec.lang = navigator.language || 'en-US';
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onresult = (event) => {
+    for (let i = event.resultIndex || 0; i < event.results.length; i++) {
+      const result = event.results[i];
+      const rest = matchName(result[0].transcript, state.name);
+      if (rest === null) continue;
+      // Wait for the end of "Atlas, brief me"; the name alone starts a turn at once.
+      if (rest && !result.isFinal) return;
+      stopWake();
+      if (rest) sendText(rest, { source: 'voice' });
+      else startListening();
+      return;
+    }
+  };
+  rec.onerror = (event) => {
+    if (event && (event.error === 'not-allowed' || event.error === 'service-not-allowed')) {
+      store(STORAGE.wake, null);
+      syncWakeToggle();
+      toast(`Microphone access was blocked, so I can't listen for “${state.name}”.`, { variant: 'error' });
+    }
+  };
+  rec.onend = () => {
+    if (state.wakeRec !== rec) return;
+    state.wakeRec = null;
+    scheduleWake(); // engines stop after a while; keep listening while the app is open
+  };
+  try {
+    rec.start();
+  } catch {
+    state.wakeRec = null;
+  }
+}
+
+function syncWakeToggle() {
+  const toggle = $('wake-toggle');
+  toggle.checked = load(STORAGE.wake) === '1';
+  toggle.disabled = !wakeSupported();
+  $('wake-label').textContent = `Listen for “${state.name}” while the app is open`;
+  $('wake-ios').hidden = !isIos();
+  $('wake-unsupported').hidden = isIos() || wakeSupported();
+  setOrb(state.orb);
+}
+
+function onWakeToggle(event) {
+  store(STORAGE.wake, event.target.checked ? '1' : null);
+  if (!event.target.checked) stopWake();
+  syncWakeToggle();
+}
+
+function applyName(name) {
+  state.name = (name || '').trim() || 'Atlas';
+  store(STORAGE.name, state.name);
+  renderTranscript();
+  syncWakeToggle();
+}
+
+async function loadName() {
+  try {
+    const health = await api('/health');
+    if (health && health.assistant_name) applyName(health.assistant_name);
+  } catch {
+    // Offline or an older server: keep the saved name.
   }
 }
 
@@ -570,7 +704,7 @@ function renderTranscript() {
   const list = $('transcript');
   const turns = state.turns.slice(-MAX_TURNS);
   list.replaceChildren(...turns.map((t) => h('li', { class: `turn turn-${t.role}` },
-    h('span', { class: 'turn-who', text: t.role === 'user' ? 'You' : 'Assistant' }),
+    h('span', { class: 'turn-who', text: t.role === 'user' ? 'You' : state.name }),
     h('span', { class: 'turn-text', text: t.text }))));
   $('transcript-empty').hidden = turns.length > 0;
 }
@@ -1326,12 +1460,18 @@ function bindUi() {
   window.addEventListener('offline', () => setConn('offline', 'Offline'));
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && getToken()) connectSocket();
+    if (document.visibilityState === 'hidden') stopWake();
+    else if (state.orb === 'idle') scheduleWake();
   });
+  $('wake-toggle').addEventListener('change', onWakeToggle);
 }
 
 function init() {
   $('today-label').textContent = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
   bindUi();
+  state.name = load(STORAGE.name) || 'Atlas';
+  syncWakeToggle();
+  loadName();
   syncKindButtons();
   setOrb('idle');
   renderTranscript();
@@ -1347,6 +1487,8 @@ function init() {
 
   const params = new URLSearchParams(location.search);
   const autostart = params.get('autostart') === 'brief';
+  // "Hey Siri, Atlas" opens /?autostart=listen: start listening straight away.
+  const listenNow = params.get('autostart') === 'listen';
   // Back from a Google or Microsoft sign-in (see /oauth/<provider>/callback).
   const connected = params.get('connected');
   if (connected) {
@@ -1355,7 +1497,7 @@ function init() {
     toast(`${label} is connected. Your assistant will start using it within a few minutes.`, { title: 'Connected', variant: 'ok' });
     if (getToken()) openSettings();
   }
-  if (autostart || connected) {
+  if (autostart || connected || listenNow) {
     params.delete('autostart');
     const qs = params.toString();
     history.replaceState(null, '', `${location.pathname}${qs ? `?${qs}` : ''}${location.hash}`);
@@ -1368,6 +1510,7 @@ function init() {
       runBriefFlow();
     } else {
       refreshAll();
+      if (listenNow) startListening();
     }
   } else if (autostart) {
     state.autostartPending = true;

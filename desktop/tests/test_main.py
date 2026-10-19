@@ -30,7 +30,7 @@ from assistant_desktop.main import (
 from assistant_desktop.stt import SttUnavailableError
 from assistant_desktop.tts import TextSpeaker, VoiceSpeaker
 from assistant_desktop.ui import StatusLine
-from assistant_desktop.wakeword import State
+from assistant_desktop.wakeword import OpenWakeWordDetector, SpokenNameDetector, State
 
 BASE = "http://backend.test"
 
@@ -353,15 +353,25 @@ def test_build_voice_input(monkeypatch: pytest.MonkeyPatch, env: dict[str, str])
     fake_sounddevice(monkeypatch, available=True)
     voice = build_voice_input(config)
     assert voice is not None
-    assert voice.detector is not None and voice.detector.model_name == "hey_jarvis"
+    assert isinstance(voice.detector, SpokenNameDetector) and voice.detector.name == "atlas"
     assert voice.transcriber.model_size == "small"
     assert voice.transcriber.language is None
     endpointer = voice.recorder._factory()
     assert endpointer.silence_seconds == config.listen.silence_seconds
     assert endpointer.noise_floor_dbfs == voice.noise.value
+    # A name doesn't need openWakeWord; its own models do.
     monkeypatch.setattr(main_module, "module_available", lambda name: name != "openwakeword")
     voice = build_voice_input(config)
+    assert voice is not None and isinstance(voice.detector, SpokenNameDetector)
+    jarvis = load_config(env={**env, "CEO_DESKTOP_WAKE_PHRASE": "hey jarvis"})
+    voice = build_voice_input(jarvis)
     assert voice is not None and voice.detector is None
+    monkeypatch.setattr(main_module, "module_available", lambda _name: True)
+    voice = build_voice_input(jarvis)
+    assert isinstance(voice.detector, OpenWakeWordDetector)  # type: ignore[union-attr]
+    assert voice.detector.model_name == "hey_jarvis"  # type: ignore[union-attr]
+    off = load_config(env={**env, "CEO_DESKTOP_WAKE_ENABLED": "false"})
+    assert build_voice_input(off).detector is None  # type: ignore[union-attr]
 
 
 def test_module_available() -> None:

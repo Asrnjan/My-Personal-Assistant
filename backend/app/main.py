@@ -143,7 +143,17 @@ def create_app(
         session_factory, llm, adapters, notifiers, policy, notices, tz, clock
     )
     agent = ConversationAgent(
-        session_factory, llm, actions, briefer, delegation, learning, policy, rubric, tz, clock
+        session_factory,
+        llm,
+        actions,
+        briefer,
+        delegation,
+        learning,
+        policy,
+        rubric,
+        tz,
+        clock,
+        name=app_config.assistant_name,
     )
     jobs = AssistantJobs(sync_service, briefer, bus, session_factory, followups, actions)
 

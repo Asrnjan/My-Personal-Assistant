@@ -15,7 +15,12 @@ from tests.conftest import API_SECRET
 def test_health_ok(client: TestClient) -> None:
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok", "version": "0.1.0", "database": "ok"}
+    assert resp.json() == {
+        "status": "ok",
+        "version": "0.1.0",
+        "database": "ok",
+        "assistant_name": "Atlas",
+    }
 
 
 def test_health_degraded_when_db_unreachable(tmp_path: object) -> None:

@@ -24,7 +24,7 @@ def test_defaults_without_file(clean_env: dict[str, str]) -> None:
     config = load_config(env=clean_env)
     assert config.source is None
     assert config.backend.url == DEFAULT_BACKEND_URL
-    assert config.wake.phrase == "hey jarvis"
+    assert config.wake.phrase == "atlas" and config.wake.engine == "auto"
     assert config.wake.hotkey == "ctrl+alt+space"
     assert config.stt.model == "small"
     assert config.stt.compute_type == "int8"

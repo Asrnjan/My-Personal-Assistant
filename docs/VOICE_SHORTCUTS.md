@@ -23,6 +23,18 @@ Optional, to make it automatic: **Shortcuts → Automation → + → Time of Day
 
 If the shortcut opens Safari instead of the installed app, delete the app icon and add it again from Safari with **Share → Add to Home Screen**, then run the shortcut once and choose the app when asked.
 
+## iPhone: "Hey Siri, Atlas"
+
+iPhones don't let a web app listen in the background, so Siri does the listening for the name.
+
+1. In **Shortcuts**, tap **+**, add **Open URLs**, and paste `https://<your assistant address>/?autostart=listen`.
+2. Rename the shortcut to **Atlas** (or whatever `assistant_name` is in `config/config.yaml`).
+3. Say **"Hey Siri, Atlas."** The app opens already listening; say your request.
+
+## Android and computers: just say "Atlas"
+
+In the app, open **Settings → Call by name** and turn on **Listen for "Atlas" while the app is open**. While the app is on screen, say "Atlas" and then your request, or both at once: "Atlas, brief me". Change the name with `assistant_name` in `config/config.yaml` and restart the backend; the app picks it up.
+
 ## Android: Google Assistant routine
 
 1. Open the **Google** app (or **Google Assistant** settings), tap your profile picture → **Settings → Google Assistant → Routines**.
@@ -36,7 +48,7 @@ If your phone has Gemini instead of Google Assistant, routines are under the **G
 
 ## Desktop
 
-The desktop app has its own wake word: say **"hey jarvis, brief me"**, or press Ctrl+Alt+Space and say "brief me".
+The desktop app has its own wake word: say **"Atlas, brief me"**, or press Ctrl+Alt+Space and say "brief me".
 
 ## Telegram
 

@@ -16,9 +16,12 @@ reply_timeout_seconds = 60.0
 
 [wake]
 enabled = true                         # CEO_DESKTOP_WAKE_ENABLED
-# A pretrained openWakeWord model name ("hey jarvis", "alexa", "hey mycroft",
-# "hey rhasspy") or a path to your own .onnx / .tflite model.
-phrase = "hey jarvis"                  # CEO_DESKTOP_WAKE_PHRASE
+# The assistant's name. Any word works: it is heard by the same Whisper model that
+# transcribes your requests, so "Atlas, brief me" works in one breath. An
+# openWakeWord model name ("hey jarvis", "alexa", "hey mycroft", "hey rhasspy")
+# or a path to your own .onnx / .tflite model uses openWakeWord instead.
+phrase = "atlas"                       # CEO_DESKTOP_WAKE_PHRASE
+engine = "auto"                        # CEO_DESKTOP_WAKE_ENGINE: auto | whisper | openwakeword
 threshold = 0.5                        # CEO_DESKTOP_WAKE_THRESHOLD
 hotkey = "ctrl+alt+space"              # CEO_DESKTOP_HOTKEY (push-to-talk / barge-in)
 cooldown_seconds = 1.5

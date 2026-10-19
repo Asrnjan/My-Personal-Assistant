@@ -1,0 +1,90 @@
+'use strict';
+
+const { test, expect } = require('@playwright/test');
+const { setup, findCalls, converseReply } = require('./helpers');
+
+const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
+
+function health(name) {
+  return { 'GET /health': () => ({ json: { status: 'ok', assistant_name: name } }) };
+}
+
+async function turnOnListening(page, name = 'Atlas') {
+  await page.getByRole('button', { name: 'Open settings' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Settings' });
+  const toggle = dialog.getByRole('switch', { name: `Listen for “${name}” while the app is open` });
+  await toggle.check();
+  await dialog.getByRole('button', { name: 'Close settings' }).click();
+  await expect(page.locator('#orb-label')).toHaveText(`Say “${name}” or tap`);
+  await expect.poll(() => page.evaluate(() => window.__recognitions.some((r) => r.continuous && r.started && !r.ended))).toBe(true);
+}
+
+const wakeRecognizer = (page) => page.evaluateHandle(() => window.__recognitions.filter((r) => r.continuous && !r.ended).pop());
+
+test('saying "Atlas, brief me" sends the request in one go', async ({ page }) => {
+  const { calls } = await setup(page, { overrides: { ...health('Atlas'), 'POST /converse': () => ({ json: converseReply('Good morning.') }) } });
+  await page.goto('/');
+  await turnOnListening(page);
+  const rec = await wakeRecognizer(page);
+  await rec.evaluate((r) => r.__hear('pass the salt please'));
+  await rec.evaluate((r) => r.__hear('hey atlas brief'));
+  expect(findCalls(calls, 'POST', '/converse')).toHaveLength(0); // waits for the end of the sentence
+  await rec.evaluate((r) => r.__say('Hey Atlas, brief me.'));
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length).toBe(1);
+  expect(findCalls(calls, 'POST', '/converse')[0].body.text).toBe('brief me');
+  await expect(page.locator('#transcript .turn-assistant .turn-who')).toHaveText('Atlas');
+  // Back to listening for the name once the answer has been spoken.
+  await expect.poll(() => page.evaluate(() => window.__recognitions.filter((r) => r.continuous && r.started && !r.ended).length)).toBe(1);
+});
+
+test('the name alone starts listening for the request', async ({ page }) => {
+  const { calls } = await setup(page, { overrides: health('Atlas') });
+  await page.goto('/');
+  await turnOnListening(page);
+  const rec = await wakeRecognizer(page);
+  await rec.evaluate((r) => r.__hear('at last'));
+  await expect(page.locator('#orb')).toHaveAttribute('data-state', 'listening');
+  const turn = await page.evaluateHandle(() => window.__recognitions.filter((r) => !r.continuous).pop());
+  await turn.evaluate((r) => r.__say("What's next?"));
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length).toBe(1);
+  expect(findCalls(calls, 'POST', '/converse')[0].body.text).toBe("What's next?");
+});
+
+test('the server decides the name, and turning it off stops listening', async ({ page }) => {
+  await setup(page, { overrides: health('Nova') });
+  await page.goto('/');
+  await turnOnListening(page, 'Nova');
+  await page.reload();
+  await expect(page.locator('#orb-label')).toHaveText('Say “Nova” or tap');
+  await page.getByRole('button', { name: 'Open settings' }).click();
+  await page.getByRole('switch', { name: 'Listen for “Nova” while the app is open' }).uncheck();
+  await expect(page.locator('#orb-label')).toHaveText('Tap to talk');
+  await expect.poll(() => page.evaluate(() => window.__recognitions.filter((r) => r.continuous && !r.ended).length)).toBe(0);
+});
+
+test('a blocked microphone turns listening off and says why', async ({ page }) => {
+  await setup(page, { overrides: health('Atlas') });
+  await page.goto('/');
+  await turnOnListening(page);
+  const rec = await wakeRecognizer(page);
+  await rec.evaluate((r) => r.onerror({ error: 'not-allowed' }));
+  await expect(page.locator('.toast')).toContainText('can\'t listen for “Atlas”');
+  await expect(page.locator('#orb-label')).toHaveText('Tap to talk');
+});
+
+test.describe('on iPhone', () => {
+  test.use({ userAgent: IPHONE_UA });
+
+  test('points to the Siri shortcut, and /?autostart=listen starts recording', async ({ page }) => {
+    await setup(page, { overrides: health('Atlas'), speech: { mediaRecorder: true } });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open settings' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Settings' });
+    await expect(dialog.getByRole('switch')).toBeDisabled();
+    await expect(dialog.locator('#wake-ios')).toContainText('Hey Siri, Atlas');
+
+    await page.goto('/?autostart=listen');
+    await expect(page.locator('#orb')).toHaveAttribute('data-state', 'listening');
+    expect(new URL(page.url()).search).toBe('');
+  });
+});

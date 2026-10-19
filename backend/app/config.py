@@ -82,7 +82,7 @@ class BudgetConfig(_Strict):
 
 
 class WakeWordConfig(_Strict):
-    phrase: str = "hey jarvis"
+    phrase: str = "atlas"
     push_to_talk_hotkey: str = "ctrl+alt+space"
 
 
@@ -129,6 +129,8 @@ class SchedulerConfig(_Strict):
 
 
 class AppConfig(_Strict):
+    # What the CEO calls the assistant; the apps listen for it and it answers to it.
+    assistant_name: str = Field(default="Atlas", min_length=1, max_length=30)
     timezone: str = "Asia/Kolkata"
     brief_times: BriefTimes = Field(default_factory=BriefTimes)
     adapters: AdaptersConfig = Field(default_factory=AdaptersConfig)
