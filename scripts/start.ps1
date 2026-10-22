@@ -129,10 +129,12 @@ $wanted = (Get-FileHash $pyproject -Algorithm SHA256).Hash
 $have = ""
 if (Test-Path $marker) { $have = (Get-Content $marker -Raw).Trim() }
 if ($have -ne $wanted) {
-    Say "Installing the parts Atlas needs (only the first time, or after an update)..." "Cyan"
+    Say "Installing the parts Atlas needs (only the first time, or after an update)." "Cyan"
+    Say "This downloads about 450 MB and can take 10 to 30 minutes. The lines below show it working." "DarkGray"
     & $venvPython -m pip install --quiet --disable-pip-version-check --upgrade pip
     # [stt] adds speech-to-text, so the iPhone app and Telegram voice notes can be understood.
-    & $venvPython -m pip install --quiet --disable-pip-version-check -e ((Join-Path $Root "backend") + "[stt]")
+    # Not --quiet: a silent first install of several hundred MB looks like a hang.
+    & $venvPython -m pip install --disable-pip-version-check --progress-bar on -e ((Join-Path $Root "backend") + "[stt]")
     if ($LASTEXITCODE -ne 0) {
         Stop-WithMessage "Installing failed. Check your internet connection and double-click Start Atlas again."
     }
