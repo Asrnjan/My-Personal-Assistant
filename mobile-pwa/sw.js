@@ -1,7 +1,7 @@
 // Service worker: offline app shell, API network-first, Web Push.
 'use strict';
 
-const VERSION = 'v3';
+const VERSION = 'v4';
 const SHELL_CACHE = `cos-shell-${VERSION}`;
 const DATA_CACHE = `cos-data-${VERSION}`;
 const FONT_CACHE = `cos-fonts-${VERSION}`;
@@ -10,6 +10,7 @@ const SHELL_FILES = [
   './',
   'index.html',
   'app.js',
+  'cluster.js',
   'styles.css',
   'manifest.webmanifest',
   'icons/icon-192.png',

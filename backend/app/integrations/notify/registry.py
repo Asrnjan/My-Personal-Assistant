@@ -32,19 +32,20 @@ def build_notifiers(settings: Settings, config: AppConfig, adapters: Adapters) -
             out.append(EmailNotifier(adapters.mail[0], settings.ceo_email or None))
         else:
             log.warning("notifier skipped - email: no Google or Microsoft mailbox connected")
-    if "telegram" in enabled:
+    # Tokens entered in the app switch a channel on without editing config.yaml.
+    if "telegram" in enabled or settings.telegram_bot_token.get_secret_value():
         api = telegram_api(settings)
         if api is not None:
             out.append(TelegramNotifier(api, settings.telegram_ceo_chat_id or None))
         else:
             log.warning("notifier skipped - telegram: TELEGRAM_BOT_TOKEN is not set")
-    if "slack" in enabled:
+    if "slack" in enabled or settings.slack_bot_token.get_secret_value():
         token = settings.slack_bot_token.get_secret_value()
         if token:
             out.append(SlackNotifier(slack_client(token), settings.slack_ceo_user_id or None))
         else:
             log.warning("notifier skipped - slack: SLACK_BOT_TOKEN is not set")
-    if "teams" in enabled:
+    if "teams" in enabled or settings.teams_webhook_url.get_secret_value():
         # Delegates' webhooks live in contacts.yaml, so Teams works without a CEO webhook.
         out.append(TeamsNotifier(settings.teams_webhook_url.get_secret_value() or None))
     return out

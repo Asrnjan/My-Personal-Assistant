@@ -4,7 +4,7 @@
 
 const TOKEN = 'test-token-123';
 
-const API_PREFIXES = ['/auth/', '/brief/', '/converse', '/actions', '/followups', '/stt', '/tts', '/push/', '/health', '/accounts'];
+const API_PREFIXES = ['/auth/', '/brief/', '/converse', '/actions', '/followups', '/stt', '/tts', '/push/', '/health', '/accounts', '/connections'];
 
 const SAMPLE_BRIEF = {
   kind: 'morning',
@@ -75,6 +75,33 @@ function converseReply(text, extra = {}) {
   };
 }
 
+/** The /connections response. `connected` lists app ids. */
+function connectionsBody({ connected = [] } = {}) {
+  const apps = [
+    ['claude', 'Claude', 'brain', [['api_key', 'API key', true, false]]],
+    ['jira', 'Jira', 'tasks', [['base_url', 'Your Jira address', false, false], ['email', 'Your Atlassian email', false, false], ['api_token', 'API token', true, false]]],
+    ['asana', 'Asana', 'tasks', [['token', 'Personal access token', true, false]]],
+    ['telegram', 'Telegram', 'chat', [['bot_token', 'Bot token', true, false], ['chat_id', 'Your chat id', false, true]]],
+  ];
+  return {
+    ready: true,
+    apps: apps.map(([id, name, group, fields]) => ({
+      id,
+      name,
+      group,
+      description: `${name} description`,
+      steps: [`Open ${name}.`, 'Paste it here.'],
+      link: `https://example.com/${id}`,
+      link_label: 'Get a key',
+      connected: connected.includes(id),
+      source: connected.includes(id) ? 'app' : null,
+      fields: fields.map(([key, label, secret, optional]) => ({
+        key, label, secret, optional, placeholder: '', help: '', value: '', filled: connected.includes(id),
+      })),
+    })),
+  };
+}
+
 /** The /accounts response. `connected` and `configured` list account and provider ids. */
 function accountsBody({ connected = [], configured = [], redirect = 'http://127.0.0.1:4173' } = {}) {
   const kinds = [
@@ -127,6 +154,7 @@ async function mockApi(page, overrides = {}) {
     'POST /push/subscribe': () => ({ status: 201, json: { ok: true } }),
     'GET /health': () => ({ json: { status: 'ok' } }),
     'GET /accounts': () => ({ json: accountsBody() }),
+    'GET /connections': () => ({ json: connectionsBody() }),
   };
 
   await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.abort());
@@ -343,6 +371,7 @@ function findCalls(calls, method, path) {
 }
 
 module.exports = {
+  connectionsBody,
   accountsBody,
   TOKEN,
   SAMPLE_BRIEF,

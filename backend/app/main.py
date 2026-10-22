@@ -7,6 +7,7 @@ import mimetypes
 import threading
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +19,7 @@ from app.api import (
     auth,
     routes_accounts,
     routes_brief,
+    routes_connections,
     routes_converse,
     routes_health,
     routes_items,
@@ -45,6 +47,7 @@ from app.engine.priority import PriorityEngine
 from app.engine.rubric import load_rubric
 from app.engine.sync import SyncService
 from app.events import EventBus
+from app.integrations.connections import ConnectionService
 from app.integrations.notify.base import Notifier
 from app.integrations.notify.registry import build_notifiers, telegram_api
 from app.integrations.notify.telegram import TelegramApi
@@ -93,14 +96,33 @@ def create_app(
         tz=app_config.tz,
         clock=clock,
     )
-    sender = llm_sender or AnthropicSender(
-        settings.anthropic_api_key.get_secret_value(), app_config.models.max_retries
-    )
-
-    oauth: OAuthManager | None = None
+    connections: ConnectionService | None = None
+    cipher: TokenCipher | None = None
     fernet_key = settings.fernet_key.get_secret_value()
     if fernet_key:
         cipher = TokenCipher(fernet_key)
+        connections = ConnectionService(session_factory, cipher, settings, clock)
+        try:
+            # Keys entered in the app win over .env, and must be in place before anything
+            # below reads them.
+            connections.apply_saved()
+        except SQLAlchemyError as exc:
+            log.error("could not read saved connections (has `alembic upgrade head` run?): %s", exc)
+    anthropic_sender = AnthropicSender(
+        settings.anthropic_api_key.get_secret_value(), app_config.models.max_retries
+    )
+    sender = llm_sender or anthropic_sender
+    if connections is not None and llm_sender is None:
+        connections.on_change(
+            lambda app_id: (
+                anthropic_sender.set_api_key(settings.anthropic_api_key.get_secret_value())
+                if app_id == "claude"
+                else None
+            )
+        )
+
+    oauth: OAuthManager | None = None
+    if cipher is not None:
         oauth = OAuthManager(
             {"google": google_provider(settings), "microsoft": microsoft_provider(settings)},
             TokenStore(session_factory, cipher, clock),
@@ -166,13 +188,37 @@ def create_app(
             session_factory, push_sender or pywebpush_sender(vapid_key, settings.vapid_subject)
         )
         bus.subscribe(pusher.on_event)
-    bot: TelegramBot | None = None
-    telegram = telegram or telegram_api(settings)
-    if telegram is not None and settings.telegram_ceo_chat_id:
-        bot = TelegramBot(
-            telegram, settings.telegram_ceo_chat_id, agent, followups, stt=stt, tts=tts
+    telegram_override = telegram
+    tg: dict[str, Any] = {"bot": None, "stop": None, "unsub": None, "live": False}
+
+    def start_telegram() -> None:
+        """(Re)build the Telegram bot from the current settings. Runs at startup and again
+        when Telegram is connected or changed from the app."""
+        if tg["stop"] is not None:
+            tg["stop"].set()
+        if tg["unsub"] is not None:
+            tg["unsub"]()
+        tg.update(bot=None, stop=None, unsub=None)
+        if tg.get("app") is not None:
+            tg["app"].state.telegram_bot = None
+        api = telegram_override or telegram_api(settings)
+        if api is None or not settings.telegram_ceo_chat_id:
+            return
+        new_bot = TelegramBot(
+            api, settings.telegram_ceo_chat_id, agent, followups, stt=stt, tts=tts
         )
-        bot.subscribe(bus)
+        tg["bot"] = new_bot
+        tg["unsub"] = new_bot.subscribe(bus)
+        if tg.get("app") is not None:
+            tg["app"].state.telegram_bot = new_bot
+        if tg["live"] and settings.telegram_polling:
+            tg["stop"] = threading.Event()
+            new_bot.start(tg["stop"])
+
+    start_telegram()
+    bot = tg["bot"]
+    if connections is not None:
+        connections.on_change(lambda app_id: start_telegram() if app_id == "telegram" else None)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -185,13 +231,16 @@ def create_app(
         if scheduler is not None:
             scheduler.start()
             log.info("scheduler started (%s)", app_config.timezone)
-        stop = threading.Event()
-        if bot is not None and settings.telegram_polling:
-            bot.start(stop)
+        tg["live"] = True
+        if tg["bot"] is not None and settings.telegram_polling:
+            tg["stop"] = threading.Event()
+            tg["bot"].start(tg["stop"])
         try:
             yield
         finally:
-            stop.set()
+            tg["live"] = False
+            if tg["stop"] is not None:
+                tg["stop"].set()
             if scheduler is not None:
                 scheduler.shutdown(wait=False)
 
@@ -224,6 +273,8 @@ def create_app(
     app.state.tts = tts
     app.state.pusher = pusher
     app.state.telegram_bot = bot
+    app.state.connections = connections
+    tg["app"] = app
     origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
     if origins:
         app.add_middleware(
@@ -245,6 +296,7 @@ def create_app(
     app.include_router(routes_usage.router)
     app.include_router(routes_oauth.router)
     app.include_router(routes_accounts.router)
+    app.include_router(routes_connections.router)
     app.include_router(routes_items.router)
     app.include_router(routes_brief.router)
     app.include_router(routes_converse.router)

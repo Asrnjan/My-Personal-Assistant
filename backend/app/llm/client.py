@@ -52,6 +52,11 @@ class AnthropicSender:
         self._max_retries = max_retries
         self._client: anthropic.Anthropic | None = None
 
+    def set_api_key(self, api_key: str | None) -> None:
+        """Use a key entered in the app from the next request on."""
+        self._api_key = api_key or None
+        self._client = None
+
     def send(self, params: dict[str, Any]) -> Message:
         if self._client is None:
             # Created lazily so the app starts without credentials; the SDK

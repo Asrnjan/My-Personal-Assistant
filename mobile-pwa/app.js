@@ -3,6 +3,8 @@
 
 'use strict';
 
+import { StarCluster } from './cluster.js';
+
 const STORAGE = {
   token: 'cos.token',
   apiBase: 'cos.apiBase',
@@ -43,6 +45,22 @@ const ACTION_KINDS = {
 };
 
 const ACCOUNT_NAMES = { outlook: 'Outlook', google: 'Google', teams: 'Microsoft Teams' };
+
+// Letter and colour for each app's tile.
+const TILES = {
+  claude: ['C', '#d97757'],
+  google: ['G', '#4285f4'],
+  outlook: ['O', '#0f6cbd'],
+  teams: ['T', '#6264a7'],
+  jira: ['J', '#2684ff'],
+  asana: ['A', '#f06a6a'],
+  clickup: ['C', '#7b68ee'],
+  telegram: ['T', '#2aabee'],
+  slack: ['S', '#e01e5a'],
+  'teams-webhook': ['T', '#6264a7'],
+};
+
+const VIEWS = ['home', 'team', 'chat', 'apps'];
 
 const ORB_LABELS = {
   idle: 'Tap to talk',
@@ -85,7 +103,14 @@ const state = {
   name: 'Atlas',
   wakeRec: null,
   wakeTimer: null,
+  view: 'home',
+  connections: null,
+  micLevel: 0,
+  sheetApp: null,
 };
+
+// The star cluster that stands in for the assistant; created in init().
+let cluster = null;
 
 // ---------------------------------------------------------------- storage
 
@@ -227,6 +252,7 @@ function setOrb(next) {
   orb.dataset.state = next;
   orb.setAttribute('aria-label', ORB_ARIA[next]);
   orb.setAttribute('aria-pressed', next === 'listening' ? 'true' : 'false');
+  if (cluster) cluster.setState(next);
   $('orb-label').textContent = next === 'idle' && wakeOn() ? `Say “${state.name}” or tap` : ORB_LABELS[next];
   if (next === 'idle') scheduleWake();
   else stopWake();
@@ -411,6 +437,7 @@ function startRecognition(Ctor) {
       else interim += result[0].transcript;
     }
     interimText = interim;
+    if (cluster) cluster.bump(0.3);
     setCaption(finalText || interim);
     if (finalText.trim() && !handled) send(finalText.trim());
   };
@@ -517,6 +544,7 @@ function startWake() {
       // Wait for the end of "Atlas, brief me"; the name alone starts a turn at once.
       if (rest && !result.isFinal) return;
       stopWake();
+      if (cluster) cluster.pulse(1.2);
       if (rest) sendText(rest, { source: 'voice' });
       else startListening();
       return;
@@ -677,6 +705,7 @@ function watchSilence(stream, onSilence) {
     let sum = 0;
     for (const v of samples) sum += v * v;
     const level = Math.sqrt(sum / samples.length);
+    state.micLevel = level;
     const now = Date.now();
     if (level > SILENCE_LEVEL) {
       heard = true;
@@ -686,8 +715,11 @@ function watchSilence(stream, onSilence) {
       else if (now - quietSince >= SILENCE_STOP_MS) onSilence();
     }
   }, 100);
+  if (cluster) cluster.setLevelSource(() => Math.min(1, state.micLevel * 8));
   return () => {
     clearInterval(timer);
+    state.micLevel = 0;
+    if (cluster) cluster.setLevelSource(null);
     ctx.close().catch(() => {});
   };
 }
@@ -716,9 +748,19 @@ async function converse(text) {
   return data;
 }
 
+function showReply(text) {
+  const bubble = $('reply-bubble');
+  bubble.textContent = text || '';
+  bubble.hidden = !text;
+}
+
 function handleConverseResponse(data) {
   if (!data) return;
-  if (data.reply) addTurn('assistant', data.reply);
+  if (data.reply) {
+    addTurn('assistant', data.reply);
+    showReply(data.reply);
+    if (cluster) cluster.pulse(0.5);
+  }
   if (Array.isArray(data.pending_actions)) {
     for (const action of data.pending_actions) {
       if (action.status === 'pending') state.pending.set(action.id, action);
@@ -736,6 +778,7 @@ function handleConverseResponse(data) {
   }
   promptConnect(Array.isArray(data.needs_account) ? data.needs_account : []);
   if (data.needs_confirmation) {
+    showView('home');
     $('pending-section').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 }
@@ -763,9 +806,10 @@ async function allowAccount(id) {
     connectAccount(account);
     return;
   }
-  openSettings();
+  showView('apps');
+  renderAccounts();
   if (state.accounts.oauth_ready) openAppKeys(account.provider);
-  toast(`${account.name} needs a one-time setup first. Follow the steps in Settings.`, { title: account.name });
+  toast(`${account.name} needs a one-time setup first. Follow the steps in Apps.`, { title: account.name });
 }
 
 // Sends a message (typed or spoken) and speaks the reply. Returns the speak result.
@@ -775,6 +819,7 @@ async function sendText(text, opts = {}) {
   if (!requireAuth()) return true;
   stopSpeaking();
   addTurn('user', text);
+  if (cluster) cluster.pulse(0.6);
   setOrb('thinking');
   setCaption('');
   let data;
@@ -982,6 +1027,9 @@ function renderFollowups() {
       bits.length ? h('p', { class: 'item-text', text: bits.join(' · ') }) : null);
   }));
   $('followups-empty').hidden = state.followups.length > 0;
+  const open = state.followups.filter((f) => !['acknowledged', 'accepted', 'done', 'closed'].includes(f.state)).length;
+  $('team-badge').hidden = open === 0;
+  $('team-badge').textContent = String(open);
 }
 
 async function loadFollowups() {
@@ -1182,7 +1230,7 @@ const PROVIDER_LABELS = { google: 'Google', microsoft: 'Microsoft' };
 
 async function loadAccounts() {
   if (!getToken()) {
-    $('accounts-list').replaceChildren(h('li', { class: 'hint', text: 'Sign in above to connect accounts.' }));
+    $('accounts-list').replaceChildren(h('li', { class: 'hint', text: 'Connect this device first (Settings).' }));
     return;
   }
   try {
@@ -1192,6 +1240,12 @@ async function loadAccounts() {
     return;
   }
   renderAccounts();
+  renderSetup();
+}
+
+function appTile(id) {
+  const [letter, color] = TILES[id] || [(id || '?')[0].toUpperCase(), '#5b6b8c'];
+  return h('span', { class: 'app-tile', style: `--tile:${color}`, 'aria-hidden': 'true', text: letter });
 }
 
 function renderAccounts() {
@@ -1221,7 +1275,8 @@ function renderAccounts() {
       button = h('button', { type: 'button', class: 'btn btn-ghost', text: 'Set up', disabled: !data.oauth_ready, onclick: () => openAppKeys(a.provider) });
     }
     button.setAttribute('aria-label', `${button.textContent} ${a.name}`);
-    return h('li', { class: 'account', 'data-account': a.id, 'data-connected': String(a.connected) },
+    return h('li', { class: 'app-row account', 'data-account': a.id, 'data-connected': String(a.connected) },
+      appTile(a.id),
       h('div', { class: 'account-text' },
         h('span', { class: 'account-name', text: a.name }),
         h('span', { class: 'account-desc', text: a.description }),
@@ -1259,8 +1314,35 @@ function openAppKeys(provider) {
   $('app-client-id').focus();
 }
 
+const APP_KEY_GUIDES = {
+  microsoft: {
+    link: 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade',
+    label: 'Open Microsoft Entra',
+    steps: [
+      'Open Microsoft Entra and choose New registration.',
+      'Name it "Chief of Staff", choose a Web redirect and paste the redirect URI below.',
+      'Under Certificates & secrets, create a client secret.',
+      'Paste the Application (client) ID, the secret and the Directory (tenant) ID here.',
+    ],
+  },
+  google: {
+    link: 'https://console.cloud.google.com/apis/credentials',
+    label: 'Open Google Cloud',
+    steps: [
+      'Open Google Cloud, create a project and enable the Gmail and Calendar APIs.',
+      'Create an OAuth client ID of type Web application.',
+      'Add the redirect URI below as an authorised redirect URI.',
+      'Paste the client ID and client secret here.',
+    ],
+  },
+};
+
 function syncAppKeysForm() {
   const provider = $('app-provider').value;
+  const guide = APP_KEY_GUIDES[provider];
+  $('app-keys-steps').replaceChildren(...guide.steps.map((step) => h('li', { text: step })));
+  $('app-keys-link').href = guide.link;
+  $('app-keys-link').textContent = guide.label;
   const info = state.accounts && state.accounts.providers.find((p) => p.id === provider);
   $('redirect-uri').value = info ? info.redirect_uri : '';
   $('tenant-row').hidden = provider !== 'microsoft';
@@ -1301,6 +1383,231 @@ async function copyRedirect() {
   }
 }
 
+// ---------------------------------------------------------------- views
+
+function viewFromHash() {
+  const name = location.hash.replace(/^#/, '');
+  return VIEWS.includes(name) ? name : 'home';
+}
+
+function showView(name, { push = false } = {}) {
+  if (!VIEWS.includes(name)) name = 'home';
+  const changed = state.view !== name;
+  state.view = name;
+  document.querySelectorAll('.view[data-view]').forEach((el) => {
+    el.hidden = el.dataset.view !== name;
+  });
+  document.querySelectorAll('.tab[data-tab]').forEach((b) => {
+    if (b.dataset.tab === name) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
+  // Tabs get a history entry so the phone's back button goes back a tab.
+  const hash = name === 'home' ? '' : `#${name}`;
+  if (push && location.hash !== hash) {
+    history.pushState(null, '', `${location.pathname}${location.search}${hash}`);
+  }
+  if (changed) window.scrollTo({ top: 0 });
+  if (name === 'apps' && getToken()) {
+    loadAccounts();
+    loadConnections();
+  }
+}
+
+// ---------------------------------------------------------------- apps (Claude, task boards, chat)
+
+const GROUP_LISTS = { brain: 'apps-brain', tasks: 'apps-tasks', chat: 'apps-chat' };
+
+async function loadConnections() {
+  if (!getToken()) {
+    state.connections = null;
+    renderApps();
+    return;
+  }
+  try {
+    state.connections = await api('/connections');
+  } catch (err) {
+    // An older server without in-app connections: keep the rest of the app working.
+    state.connections = err.status === 404 ? { ready: false, apps: [], missing: true } : state.connections;
+  }
+  renderApps();
+  renderSetup();
+}
+
+function findApp(id) {
+  return state.connections && (state.connections.apps || []).find((a) => a.id === id);
+}
+
+function renderApps() {
+  const data = state.connections;
+  for (const id of Object.values(GROUP_LISTS)) $(id).replaceChildren();
+  const note = $('apps-note');
+  note.hidden = true;
+  if (data && !data.ready && !data.missing) {
+    note.textContent = 'Apps can\'t be connected yet: FERNET_KEY is missing in the server\'s .env file. Run scripts/dev.sh once to create it.';
+    note.hidden = false;
+  }
+  for (const app of (data && data.apps) || []) {
+    const list = $(GROUP_LISTS[app.group] || 'apps-chat');
+    const label = app.connected ? 'Manage' : 'Set up';
+    list.append(h('li', { class: 'app-row', 'data-app': app.id, 'data-connected': String(app.connected) },
+      appTile(app.id),
+      h('div', { class: 'account-text' },
+        h('span', { class: 'account-name', text: app.name }),
+        h('span', { class: 'account-desc', text: app.description }),
+        h('span', { class: 'account-status', text: app.connected ? (app.source === 'env' ? 'Connected (from .env)' : 'Connected') : 'Not connected' })),
+      h('button', { type: 'button', class: `btn ${app.connected ? 'btn-ghost' : 'btn-primary'}`, 'aria-label': `${label} ${app.name}`, text: label, onclick: () => openAppSheet(app.id) })));
+  }
+  renderAppsProgress();
+}
+
+// The four things that make the assistant useful, in order of importance.
+function setupStatus() {
+  const accounts = (state.accounts && state.accounts.accounts) || [];
+  const apps = (state.connections && state.connections.apps) || [];
+  const any = (group) => apps.some((a) => a.group === group && a.connected);
+  return {
+    device: Boolean(getToken()),
+    claude: apps.some((a) => a.id === 'claude' && a.connected),
+    email: accounts.some((a) => a.connected),
+    tasks: any('tasks'),
+    chat: any('chat'),
+  };
+}
+
+function renderAppsProgress() {
+  const s = setupStatus();
+  const steps = [s.claude, s.email, s.tasks, s.chat];
+  const done = steps.filter(Boolean).length;
+  const pct = Math.round((done / steps.length) * 100);
+  const bar = $('apps-progress');
+  bar.setAttribute('aria-valuenow', String(pct));
+  bar.style.setProperty('--pct', `${pct}%`);
+  $('apps-progress-label').textContent = !s.device
+    ? 'Connect this device first (Settings).'
+    : done === steps.length ? 'Everything is connected.' : `${done} of ${steps.length} connected`;
+  $('apps-badge').hidden = !s.device || (s.claude && s.email);
+}
+
+function renderSetup() {
+  const s = setupStatus();
+  const known = !s.device || (state.connections && state.accounts);
+  const steps = [
+    { id: 'device', done: s.device, title: 'Connect this device', text: 'Enter the shared secret from the server.', go: openSettings },
+    { id: 'claude', done: s.claude, title: 'Add Claude', text: 'Paste one API key. It powers the thinking.', go: () => openAppSheet('claude') },
+    { id: 'email', done: s.email, title: 'Connect email and calendar', text: 'Google or Microsoft, with one sign-in.', go: () => showView('apps', { push: true }) },
+    { id: 'tasks', done: s.tasks, title: 'Add a task board', text: 'Optional: Jira, Asana or ClickUp.', go: () => showView('apps', { push: true }) },
+    { id: 'chat', done: s.chat, title: 'Add a chat app', text: 'Optional: Telegram, Slack or Teams.', go: () => showView('apps', { push: true }) },
+  ];
+  const card = $('setup-card');
+  // Shown until the essentials are done; the optional steps never nag.
+  card.hidden = !known || (s.device && s.claude && s.email);
+  $('setup-progress').textContent = `${steps.filter((x) => x.done).length} of ${steps.length}`;
+  $('setup-steps').replaceChildren(...steps.map((step, i) => h('li', { class: 'setup-step', 'data-step': step.id, 'data-done': String(step.done) },
+    h('span', { class: 'setup-num', 'aria-hidden': 'true', text: step.done ? '✓' : String(i + 1) }),
+    h('div', { class: 'setup-text' },
+      h('span', { class: 'setup-title', text: step.title }),
+      h('span', { class: 'setup-sub', text: step.done ? 'Done' : step.text })),
+    step.done ? null : h('button', { type: 'button', class: 'btn btn-primary sm', 'aria-label': step.title, text: 'Start', onclick: step.go }))));
+}
+
+function openAppSheet(id) {
+  if (!requireAuth()) return;
+  const app = findApp(id);
+  if (!app) {
+    showView('apps', { push: true });
+    return;
+  }
+  state.sheetApp = id;
+  const tile = appTile(id);
+  $('app-sheet-tile').replaceWith(Object.assign(tile, { id: 'app-sheet-tile' }));
+  $('app-sheet-title').textContent = app.connected ? app.name : `Connect ${app.name}`;
+  $('app-sheet-desc').textContent = app.description;
+  $('app-sheet-steps').replaceChildren(...(app.steps || []).map((step) => h('li', { text: step })));
+  const link = $('app-sheet-link');
+  link.hidden = !app.link;
+  link.href = app.link || '#';
+  link.textContent = `${app.link_label || 'Open'} ↗`;
+  $('app-sheet-fields').replaceChildren(...app.fields.map((f) => {
+    const inputId = `app-field-${f.key}`;
+    const keep = f.secret && f.filled;
+    return h('div', { class: 'field' },
+      h('label', { for: inputId }, f.label, f.optional ? h('span', { class: 'hint-inline', text: ' (optional)' }) : null),
+      h('div', { class: 'input-group' },
+        h('input', {
+          id: inputId,
+          name: f.key,
+          type: f.secret ? 'password' : 'text',
+          value: f.secret ? null : f.value,
+          placeholder: keep ? 'Saved. Leave empty to keep it.' : f.placeholder,
+          required: !f.optional && !f.filled,
+          autocomplete: 'off',
+          spellcheck: 'false',
+          autocapitalize: 'off',
+        })),
+      f.help ? h('p', { class: 'hint', text: f.help }) : null);
+  }));
+  setSheetMessage('');
+  $('app-sheet-connect').textContent = app.connected ? 'Save and check' : 'Connect';
+  $('app-sheet-disconnect').hidden = !(app.connected && app.source === 'app');
+  const dialog = $('app-sheet');
+  if (!dialog.open) {
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+  }
+  const first = dialog.querySelector('input[required]') || dialog.querySelector('input');
+  if (first) first.focus();
+}
+
+function setSheetMessage(text, cls = '') {
+  const el = $('app-sheet-msg');
+  el.textContent = text;
+  el.className = `hint ${cls}`.trim();
+}
+
+async function onAppSheetSubmit(event) {
+  event.preventDefault();
+  const id = state.sheetApp;
+  const app = findApp(id);
+  if (!app) return;
+  const values = {};
+  for (const input of $('app-sheet-fields').querySelectorAll('input')) {
+    if (input.value.trim()) values[input.name] = input.value.trim();
+  }
+  const btn = $('app-sheet-connect');
+  btn.disabled = true;
+  setSheetMessage('Checking…');
+  if (cluster) cluster.setState('thinking');
+  try {
+    const res = await api(`/connections/${encodeURIComponent(id)}`, { method: 'PUT', body: { values } });
+    setSheetMessage(res.message, 'ok');
+    if (cluster) cluster.pulse(1);
+    toast(res.message, { title: `${app.name} connected`, variant: 'ok' });
+    await loadConnections();
+    setTimeout(() => {
+      if ($('app-sheet').open && state.sheetApp === id) $('app-sheet').close();
+    }, 900);
+  } catch (err) {
+    setSheetMessage(err.message, 'warn');
+  } finally {
+    btn.disabled = false;
+    if (cluster) cluster.setState(state.orb);
+  }
+}
+
+async function onAppSheetDisconnect() {
+  const id = state.sheetApp;
+  const app = findApp(id);
+  if (!app || !window.confirm(`Disconnect ${app.name}? Your assistant stops using it.`)) return;
+  try {
+    await api(`/connections/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    $('app-sheet').close();
+    toast(`${app.name} disconnected.`);
+    await loadConnections();
+  } catch (err) {
+    setSheetMessage(err.message, 'warn');
+  }
+}
+
 // ---------------------------------------------------------------- auth + settings
 
 function requireAuth() {
@@ -1328,7 +1635,6 @@ function openSettings() {
     else dialog.setAttribute('open', '');
   }
   if (!getToken()) $('secret-input').focus();
-  loadAccounts();
 }
 
 async function onLogin(event) {
@@ -1388,13 +1694,17 @@ function onLogout() {
   renderPending();
   renderFollowups();
   renderBrief(null);
+  state.accounts = null;
+  state.connections = null;
   updateAuthUi();
+  renderSetup();
   toast('Signed out on this device.');
 }
 
 async function refreshAll() {
+  renderSetup();
   if (!getToken()) return;
-  await Promise.all([loadBrief(), loadPending(), loadFollowups()]);
+  await Promise.all([loadBrief(), loadPending(), loadFollowups(), loadAccounts(), loadConnections()]);
 }
 
 // ---------------------------------------------------------------- boot
@@ -1464,11 +1774,39 @@ function bindUi() {
     else if (state.orb === 'idle') scheduleWake();
   });
   $('wake-toggle').addEventListener('change', onWakeToggle);
+  document.querySelectorAll('.tab[data-tab]').forEach((b) => b.addEventListener('click', () => showView(b.dataset.tab, { push: true })));
+  document.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => {
+    if ($('settings').open) $('settings').close();
+    showView(b.dataset.goto, { push: true });
+  }));
+  document.querySelectorAll('.chip[data-say]').forEach((b) => b.addEventListener('click', () => sendText(b.dataset.say, { source: 'text' })));
+  window.addEventListener('hashchange', () => showView(viewFromHash()));
+  $('app-sheet-form').addEventListener('submit', onAppSheetSubmit);
+  $('app-sheet-disconnect').addEventListener('click', onAppSheetDisconnect);
+  $('app-sheet').addEventListener('click', (event) => {
+    if (event.target === $('app-sheet')) $('app-sheet').close();
+  });
+}
+
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour < 5) return 'Working late';
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
 }
 
 function init() {
   $('today-label').textContent = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  $('greeting').textContent = greeting();
+  const reduced = Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  try {
+    cluster = new StarCluster($('cluster'), { reducedMotion: reduced });
+  } catch {
+    cluster = null; // no canvas: the button still works
+  }
   bindUi();
+  showView(viewFromHash());
   state.name = load(STORAGE.name) || 'Atlas';
   syncWakeToggle();
   loadName();
@@ -1478,6 +1816,7 @@ function init() {
   renderPending();
   renderFollowups();
   updateAuthUi();
+  renderSetup();
   if (isIos() && !isStandalone()) {
     $('ios-hint').hidden = false;
     $('ios-banner').hidden = load(STORAGE.iosHintDismissed) === '1';
@@ -1495,7 +1834,7 @@ function init() {
     params.delete('connected');
     const label = PROVIDER_LABELS[connected] || 'Your account';
     toast(`${label} is connected. Your assistant will start using it within a few minutes.`, { title: 'Connected', variant: 'ok' });
-    if (getToken()) openSettings();
+    if (getToken()) showView('apps');
   }
   if (autostart || connected || listenNow) {
     params.delete('autostart');

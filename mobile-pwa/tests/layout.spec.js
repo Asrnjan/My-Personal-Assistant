@@ -68,7 +68,9 @@ test.describe('phone layout at 390px', () => {
     await page.goto('/');
     const bg = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim());
     expect(bg).toBe('#04060f');
-    const iterations = await page.locator('.orb-core').evaluate((el) => getComputedStyle(el).animationIterationCount);
+    // The star cluster draws still frames instead of animating.
+    await expect(page.locator('#cluster')).toHaveAttribute('data-motion', 'reduced');
+    const iterations = await page.locator('.sky-stars.s1').evaluate((el) => getComputedStyle(el).animationIterationCount);
     expect(iterations).toBe('1');
   });
 });

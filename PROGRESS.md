@@ -52,6 +52,13 @@ Milestones from BUILD_PROMPT.md Section 11.
 
 All milestones done.
 
+### Modern UI and in-app setup
+
+- [x] Phone app redesign: night-sky theme, bottom tab bar (Home, Team, Chat, Apps), greeting, quick-request chips, the latest reply under the assistant, back button moves between tabs.
+- [x] The blue orb is replaced by a star cluster (`mobile-pwa/cluster.js`, canvas): it turns and twinkles when idle, flashes with a shock ring when called by name, tapped or sent a message, opens up and trembles with your voice while listening (live microphone level when recording), spins into a small galaxy while thinking and ripples outward while speaking. Reduced motion draws still frames.
+- [x] Apps tab: every integration in one place with steps, a link and one or two fields. New `GET/PUT/DELETE /connections/{app}` checks credentials with the service, looks up ids (Asana workspace, ClickUp team and user, Telegram chat, Slack member), stores them encrypted (`app_connections`, migration 0010) and applies them live: the Claude key, task boards and chat channels switch on without a restart or config edit, and Telegram's bot restarts with the new token.
+- [x] Home setup checklist until the device, Claude and email are connected.
+
 ## Open issues
 
 - Adapter fixtures are hand-written from each API's documented response shapes, not recorded from live accounts; refresh them from a real account when one is connected.

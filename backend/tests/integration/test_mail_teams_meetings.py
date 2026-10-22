@@ -106,7 +106,7 @@ def test_teams_needs_the_account_and_says_so(harness: Harness) -> None:
     reply = harness.converse("Any new Teams messages?")
     assert reply["needs_account"] == ["teams"]
     assert _last_tool_result(harness)["status"] == "needs_account"
-    assert "Connect Microsoft Teams in Settings" in _last_tool_result(harness)["message"]
+    assert "Connect Microsoft Teams in the Apps tab" in _last_tool_result(harness)["message"]
 
     harness.adapters.mail = []
     harness.sender.queue(tool_call("search_email", query="x"), say("Connect your email first."))
