@@ -162,6 +162,8 @@ jobs:
           Write-Host "atlas say: $reply"
           $bad = cmd /c "atlas connect claude not-a-key 2>&1"
           if ($LASTEXITCODE -eq 0 -or ($bad -join "`n") -notmatch 'sk-ant-') { throw "atlas connect should refuse a bad key: $bad" }
+          # That refusal exits 1 on purpose; the runner would report it as this step's result.
+          $global:LASTEXITCODE = 0
 
           Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
       - name: Backend tests on Windows
