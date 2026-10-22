@@ -26,8 +26,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Local speech for /stt, /tts and Telegram voice notes.
-voice = ["faster-whisper>=1.0,<2", "piper-tts>=1.3,<2"]
+# Local speech for /stt, /tts and Telegram voice notes. faster-whisper 1.x opens audio with
+# an option PyAV 19 removed (metadata_errors), so every transcription fails with av>=19.
+voice = ["faster-whisper>=1.0,<2", "av>=11,<19", "piper-tts>=1.3,<2"]
+# Speech-to-text only: what the iPhone app and Telegram voice notes need. The Windows
+# launcher installs this; phones speak replies with their own voice.
+stt = ["faster-whisper>=1.0,<2", "av>=11,<19"]
 # The alternative Kokoro voice (tts.engine: kokoro).
 kokoro = ["kokoro>=0.9,<1"]
 dev = [

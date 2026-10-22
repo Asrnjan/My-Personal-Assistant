@@ -12,7 +12,7 @@ cd My-Personal-Assistant
 scripts/dev.sh
 ```
 
-On **Windows**, skip the commands above: download the ZIP from GitHub (**Code → Download ZIP**), extract it, and double-click **Start Atlas.bat**. It does the same first-run setup (and offers to install Python 3.12 with `winget` if it's missing), prints the sign-in secret, copies it to the clipboard and opens the app. To edit the files mentioned below, open them with Notepad from the extracted folder (`config\contacts.yaml`, `.env`).
+On **Windows**, skip the commands above: download the ZIP from GitHub (**Code → Download ZIP**), extract it, and double-click **Start Atlas.bat**. It does the same first-run setup (and offers to install Python 3.12 with `winget` if it's missing), also installs speech-to-text (the `stt` extra) and downloads its model once so the iPhone app and Telegram voice notes can be understood, fills in Web Push keys, prints the sign-in secret, copies it to the clipboard and opens the app. To edit the files mentioned below, open them with Notepad from the extracted folder (`config\contacts.yaml`, `.env`).
 
 The first run creates `backend/.venv`, copies the example files in `config/` to your own `config/*.yaml`, creates `.env` with a fresh `API_AUTH_TOKEN` and `FERNET_KEY`, and prints the sign-in secret. Open http://127.0.0.1:8000/ for the phone app (it works in a desktop browser too) and http://127.0.0.1:8000/docs for the API.
 
