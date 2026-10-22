@@ -151,3 +151,14 @@ test('the star cluster reacts: a sent message flashes it and a reply shows under
   });
   expect(lit).toBeGreaterThan(10);
 });
+
+test('touching the sphere sends ripples from that point', async ({ page }) => {
+  await setup(page);
+  await page.goto('/');
+  const cluster = page.locator('#cluster');
+  const box = await page.locator('#orb').boundingBox();
+  await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.4);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(cluster).toHaveAttribute('data-touches', '1');
+});

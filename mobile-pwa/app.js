@@ -1725,6 +1725,10 @@ function registerServiceWorker() {
 
 function bindUi() {
   $('orb').addEventListener('click', onOrbClick);
+  // Touching the sphere sends ripples out from the exact point touched.
+  $('orb').addEventListener('pointerdown', (event) => {
+    if (cluster) cluster.touch(event.clientX, event.clientY);
+  });
   $('text-form').addEventListener('submit', (event) => {
     event.preventDefault();
     const input = $('text-input');
