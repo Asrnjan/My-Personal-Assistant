@@ -42,7 +42,8 @@ function Test-Running {
     }
 }
 
-# Returns @(exe, args...) for a Python 3.11 or newer, or $null.
+# Returns "exe|arg|..." for a Python 3.11 or newer, or $null. A plain string, because
+# PowerShell unrolls (or double-wraps) returned arrays differently across versions.
 function Find-Python {
     $candidates = @(
         @("py", "-3.13"), @("py", "-3.12"), @("py", "-3.11"), @("py", "-3"),
@@ -60,8 +61,7 @@ function Find-Python {
         # The Microsoft Store placeholder "python" prints nothing and fails.
         if ($LASTEXITCODE -ne 0 -or -not $out) { continue }
         $version = 0
-        # The comma keeps a one-item array ("python") from being unrolled into a string.
-        if ([int]::TryParse(("$out").Trim(), [ref]$version) -and $version -ge 311) { return ,$c }
+        if ([int]::TryParse(("$out").Trim(), [ref]$version) -and $version -ge 311) { return ($c -join "|") }
     }
     return $null
 }
@@ -97,21 +97,18 @@ if (-not $SetupOnly -and (Test-Running)) {
 }
 
 # ---------------------------------------------------------------- Python
-$python = @(Find-Python)
-if ($python.Count -eq 0 -or -not $python[0]) { $python = $null }
-if (-not $python) {
-    if (Install-Python) {
-        $python = @(Find-Python)
-        if ($python.Count -eq 0 -or -not $python[0]) { $python = $null }
-    }
+$found = Find-Python
+if (-not $found) {
+    if (Install-Python) { $found = Find-Python }
 }
-if (-not $python) {
+if (-not $found) {
     Stop-WithMessage ("Python 3.11 or newer is needed.`n" +
         "Install it from https://www.python.org/downloads/ and tick 'Add python.exe to PATH'" +
         " on the first screen of the installer.`nThen double-click Start Atlas again.")
 }
+$python = @("$found".Split("|"))
 $pyRest = @()
-if ($python.Count -gt 1) { $pyRest = $python[1..($python.Count - 1)] }
+if ($python.Count -gt 1) { $pyRest = @($python[1..($python.Count - 1)]) }
 
 # ---------------------------------------------------------------- the backend's own Python
 $venv = Join-Path (Join-Path $Root "backend") ".venv"
