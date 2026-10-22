@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict
@@ -65,3 +67,46 @@ def display_names(delegates: list[Delegate]) -> dict[str, str]:
         d.id: first if firsts.count(first) == 1 else d.full_name
         for d, first in zip(delegates, firsts, strict=True)
     }
+
+
+def writable_contacts(path: Path | None) -> bool:
+    """The CEO's own contacts file, never the example it was copied from."""
+    return path is not None and not path.name.endswith(".example.yaml")
+
+
+def new_contact_id(full_name: str, taken: set[str]) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", full_name.lower()).strip("-") or "person"
+    candidate, n = base, 2
+    while candidate in taken:
+        candidate, n = f"{base}-{n}", n + 1
+    return candidate
+
+
+def _read_file(path: Path) -> dict[str, Any]:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else None
+    data: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    data.setdefault("delegates", [])
+    return data
+
+
+def _write_file(path: Path, data: dict[str, Any]) -> None:
+    header = "# Your team. Atlas and `atlas team` update this file; you can edit it in Notepad.\n"
+    path.write_text(
+        header + yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8"
+    )
+
+
+def save_contact(path: Path, delegate: Delegate) -> None:
+    """Add or replace one person in contacts.yaml, so the change survives a restart."""
+    data = _read_file(path)
+    entry = delegate.model_dump(mode="json", exclude_none=True)
+    people = [p for p in data["delegates"] if p.get("id") != delegate.id]
+    data["delegates"] = [*people, entry]
+    _write_file(path, data)
+
+
+def forget_contact(path: Path, delegate_id: str) -> None:
+    """Remove one person from contacts.yaml; otherwise the next start would add them back."""
+    data = _read_file(path)
+    data["delegates"] = [p for p in data["delegates"] if p.get("id") != delegate_id]
+    _write_file(path, data)
