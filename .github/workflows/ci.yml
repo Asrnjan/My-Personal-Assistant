@@ -136,5 +136,7 @@ jobs:
       - name: Backend tests on Windows
         working-directory: backend
         run: |
+          # The launcher's .env (secret and encryption key) would leak into the tests' settings.
+          Remove-Item ..\.env
           pip install -e ".[dev]"
           pytest -q
