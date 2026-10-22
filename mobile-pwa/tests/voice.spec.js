@@ -28,6 +28,69 @@ test('a spoken transcript is sent to /converse and the reply is spoken', async (
   await expect(page.locator('#transcript .turn-user')).toHaveText(new RegExp(SAID));
   await expect(page.locator('#transcript .turn-assistant')).toHaveText(new RegExp(REPLY));
   await expect(page.locator('#pending-list .pending-item')).toHaveCount(1);
+  // The conversation carries on: Atlas listens for the answer without its name.
+  await expect(page.locator('#orb')).toHaveAttribute('data-state', 'listening');
+  await expect(page.locator('#orb-label')).toHaveText('Listening… say “thanks” when you’re done');
+});
+
+test('a long request with pauses is sent whole, once you stop talking', async ({ page }) => {
+  const { calls } = await setup(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
+  await page.evaluate(() => window.__recognitions[0].__continue('Delegate the vendor review'));
+  await page.waitForTimeout(1200); // a natural pause mid-sentence
+  expect(findCalls(calls, 'POST', '/converse')).toHaveLength(0);
+  await page.evaluate(() => window.__recognitions[0].__continue('to Rahul, due Friday'));
+  await expect(page.locator('#caption')).toHaveText('Delegate the vendor review to Rahul, due Friday');
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { timeout: 6000 }).toBe(1);
+  expect(findCalls(calls, 'POST', '/converse')[0].body.text).toBe('Delegate the vendor review to Rahul, due Friday');
+});
+
+test('a tap sends what was heard straight away', async ({ page }) => {
+  const { calls } = await setup(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
+  await page.evaluate(() => window.__recognitions[0].__continue('What is on my calendar'));
+  await page.getByRole('button', { name: 'Stop listening' }).click();
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length).toBe(1);
+  expect(findCalls(calls, 'POST', '/converse')[0].body.text).toBe('What is on my calendar');
+});
+
+test('the back-and-forth needs no name, and "thanks" ends it', async ({ page }) => {
+  let replies = ['Rahul has the vendor review. Anything else?', 'You are welcome.'];
+  const { calls } = await setup(page, { overrides: { 'POST /converse': () => ({ json: converseReply(replies.shift()) }) } });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
+  await page.evaluate(() => window.__recognitions[0].__say('Who has the vendor review?'));
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { timeout: 6000 }).toBe(1);
+
+  // Atlas listens again by itself after speaking.
+  await expect.poll(() => page.evaluate(() => window.__recognitions.filter((r) => r.purpose === 'turn' && r.started && !r.ended).length)).toBe(1);
+  await page.evaluate(() => window.__recognitions.filter((r) => r.purpose === 'turn' && !r.ended).pop().__say('thanks'));
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { timeout: 6000 }).toBe(2);
+  expect(findCalls(calls, 'POST', '/converse')[1].body.text).toBe('thanks');
+
+  // "thanks" ends the conversation: no new listening after the reply.
+  await expect.poll(() => page.evaluate(() => window.__spoken)).toContain('You are welcome.');
+  await page.waitForTimeout(600);
+  await expect(page.locator('#orb')).toHaveAttribute('data-state', 'idle');
+});
+
+test('turning off "Keep the conversation going" stops listening after replies', async ({ page }) => {
+  const { calls } = await setup(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open settings' }).click();
+  await page.getByRole('switch', { name: 'Keep the conversation going' }).uncheck();
+  await page.getByRole('button', { name: 'Close settings' }).click();
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
+  await page.evaluate(() => window.__recognitions[0].__say('brief me'));
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { timeout: 6000 }).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.__spoken.length)).toBe(1);
+  await page.waitForTimeout(600);
   await expect(page.locator('#orb')).toHaveAttribute('data-state', 'idle');
 });
 

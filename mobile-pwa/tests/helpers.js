@@ -292,6 +292,15 @@ async function stubSpeech(page, options = {}) {
           result.isFinal = true;
           this.onresult({ resultIndex: 0, results: [result] });
         }
+        // Like a real engine in continuous mode: each phrase after a short pause becomes
+        // a new final result, and event.results holds the whole session so far.
+        __continue(text) {
+          this.__results = this.__results || [];
+          const result = [{ transcript: text, confidence: 0.97 }];
+          result.isFinal = true;
+          this.__results.push(result);
+          this.onresult({ resultIndex: this.__results.length - 1, results: [...this.__results] });
+        }
       }
       window.SpeechRecognition = FakeSpeechRecognition;
       window.webkitSpeechRecognition = FakeSpeechRecognition;
