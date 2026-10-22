@@ -132,6 +132,23 @@ jobs:
           if (-not $apps.ready) { throw "connections not ready" }
           $page = Invoke-WebRequest http://127.0.0.1:8000/ -UseBasicParsing
           if ($page.Content -notmatch 'Chief of Staff') { throw "app page missing" }
+
+          # iPhone voice: Windows speaks a sentence, it is saved as AAC in MP4 like an
+          # iPhone recording, and /stt must hear the words back.
+          Add-Type -AssemblyName System.Speech
+          $wav = Join-Path $env:RUNNER_TEMP 'say.wav'
+          $m4a = Join-Path $env:RUNNER_TEMP 'say.m4a'
+          $voice = New-Object System.Speech.Synthesis.SpeechSynthesizer
+          $voice.SetOutputToWaveFile($wav)
+          $voice.Speak('Brief me about my day.')
+          $voice.Dispose()
+          & backend\.venv\Scripts\python.exe scripts\ci\to_m4a.py $wav $m4a
+          if ($LASTEXITCODE -ne 0) { throw "could not make the m4a" }
+          $heard = curl.exe -s -f -H "Authorization: Bearer $token" -F "audio=@$m4a;type=audio/mp4" http://127.0.0.1:8000/stt
+          if ($LASTEXITCODE -ne 0) { throw "/stt failed" }
+          Write-Host "Heard: $heard"
+          if ((($heard | ConvertFrom-Json).text) -notmatch 'brief') { throw "/stt did not hear 'brief'" }
+
           Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
       - name: Backend tests on Windows
         working-directory: backend

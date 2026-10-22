@@ -131,7 +131,8 @@ if (Test-Path $marker) { $have = (Get-Content $marker -Raw).Trim() }
 if ($have -ne $wanted) {
     Say "Installing the parts Atlas needs (only the first time, or after an update)..." "Cyan"
     & $venvPython -m pip install --quiet --disable-pip-version-check --upgrade pip
-    & $venvPython -m pip install --quiet --disable-pip-version-check -e (Join-Path $Root "backend")
+    # [stt] adds speech-to-text, so the iPhone app and Telegram voice notes can be understood.
+    & $venvPython -m pip install --quiet --disable-pip-version-check -e ((Join-Path $Root "backend") + "[stt]")
     if ($LASTEXITCODE -ne 0) {
         Stop-WithMessage "Installing failed. Check your internet connection and double-click Start Atlas again."
     }
@@ -144,6 +145,20 @@ $lines = @(& $venvPython (Join-Path (Join-Path $Root "scripts") "setup_local.py"
 if ($LASTEXITCODE -ne 0 -or $lines.Count -eq 0) { Stop-WithMessage "Could not create the settings file (.env)." }
 if ($lines.Count -gt 1) { $lines[0..($lines.Count - 2)] | ForEach-Object { Say $_ } }
 $secret = $lines[-1]
+
+# ---------------------------------------------------------------- speech model (once)
+# Downloaded ahead of time so the first voice message from an iPhone isn't slow. A failure
+# here isn't fatal: the model is fetched again the first time someone speaks.
+$speechMarker = Join-Path $venv "atlas-speech-ready.txt"
+if (-not (Test-Path $speechMarker)) {
+    Say "Downloading the speech model so Atlas can understand your voice (one time, about 500 MB)..." "Cyan"
+    $model = @(& $venvPython (Join-Path (Join-Path $Root "scripts") "warm_speech.py"))
+    if ($LASTEXITCODE -eq 0) {
+        Set-Content -Path $speechMarker -Value $model[-1] -Encoding ASCII
+    } else {
+        Say "Couldn't download the speech model right now. It will download the first time you speak to Atlas from a phone." "Yellow"
+    }
+}
 
 # ---------------------------------------------------------------- database
 Push-Location (Join-Path $Root "backend")
