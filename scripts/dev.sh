@@ -50,7 +50,7 @@ PYEOF
   echo
   echo "Created .env. Your sign-in secret for the apps (also in .env as API_AUTH_TOKEN):"
   echo "  $TOKEN"
-  echo "Add ANTHROPIC_API_KEY to .env for real prioritization and conversation."
+  echo "Then open the app, sign in with that secret, and connect Claude and your accounts in the Apps tab."
   echo
 fi
 

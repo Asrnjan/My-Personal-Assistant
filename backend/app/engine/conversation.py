@@ -985,7 +985,7 @@ class ConversationAgent:
         turn.needs_account += [a for a in accounts if a not in turn.needs_account]
         names = {"outlook": "Outlook", "google": "Google", "teams": "Microsoft Teams"}
         spoken = " or ".join(names[a] for a in accounts)
-        message = f"{why} Connect {spoken} in Settings, Accounts, and ask me again."
+        message = f"{why} Connect {spoken} in the Apps tab, and ask me again."
         return {"status": "needs_account", "message": message}
 
     def _said_by_ceo(self, state: _State, turn: _Turn, address: str) -> bool:

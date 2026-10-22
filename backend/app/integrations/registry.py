@@ -58,9 +58,7 @@ def build_adapters(
             out.not_configured.append(f"{provider}: FERNET_KEY is not set")
             return None
         if not oauth.is_connected(provider):
-            out.not_configured.append(
-                f"{provider}: account not connected (Settings → Accounts in the app)"
-            )
+            out.not_configured.append(f"{provider}: account not connected (Apps tab in the app)")
             return None
         return HttpClient(
             provider,
@@ -92,7 +90,8 @@ def build_adapters(
     ):
         out.chat = msteams.TeamsChatAdapter(c)
 
-    if "jira" in enabled.tasks:
+    # Credentials entered in the app switch an integration on without editing config.yaml.
+    if "jira" in enabled.tasks or settings.jira_api_token.get_secret_value():
         token = settings.jira_api_token.get_secret_value()
         if settings.jira_base_url and settings.jira_email and token:
             headers = jira.basic_auth_header(settings.jira_email, token)
@@ -103,7 +102,7 @@ def build_adapters(
             )
         else:
             out.not_configured.append("jira: set JIRA_BASE_URL, JIRA_EMAIL and JIRA_API_TOKEN")
-    if "asana" in enabled.tasks:
+    if "asana" in enabled.tasks or settings.asana_access_token.get_secret_value():
         token = settings.asana_access_token.get_secret_value()
         if token and settings.asana_workspace_gid:
             headers = {"Authorization": f"Bearer {token}"}
@@ -114,7 +113,7 @@ def build_adapters(
             )
         else:
             out.not_configured.append("asana: set ASANA_ACCESS_TOKEN and ASANA_WORKSPACE_GID")
-    if "clickup" in enabled.tasks:
+    if "clickup" in enabled.tasks or settings.clickup_api_token.get_secret_value():
         token = settings.clickup_api_token.get_secret_value()
         if token and settings.clickup_team_id and settings.clickup_user_id:
             headers = {"Authorization": token}

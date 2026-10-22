@@ -14,6 +14,17 @@ scripts/dev.sh
 
 The first run creates `backend/.venv`, copies the example files in `config/` to your own `config/*.yaml`, creates `.env` with a fresh `API_AUTH_TOKEN` and `FERNET_KEY`, and prints the sign-in secret. Open http://127.0.0.1:8000/ for the phone app (it works in a desktop browser too) and http://127.0.0.1:8000/docs for the API.
 
+### The easy way: set everything up from the app
+
+You don't have to edit `.env` for any of the sections below. Open the app, enter the sign-in secret, and the **Home** screen shows a short checklist. The **Apps** tab lists everything the assistant can connect to, each with numbered steps, a link to the right page, and one or two boxes to paste into:
+
+- **Claude**: paste your API key.
+- **Google, Outlook, Teams**: a one-time app registration (the steps and redirect address are shown), then a normal sign-in.
+- **Jira**: your Jira address, email and API token. **Asana** and **ClickUp**: just a token; the workspace and your user id are looked up for you.
+- **Telegram**: paste the bot token from @BotFather, press Start in your bot, and tap Connect; your chat id is found for you. **Slack**: the bot token (your member id is found from `CEO_EMAIL` when the app has `users:read.email`). **Teams channel**: a webhook URL.
+
+Every value is checked with the service before it is saved, stored encrypted with `FERNET_KEY`, and used straight away without a restart. Values saved in the app take precedence over `.env`. The sections below are the manual route, and explain what each value is.
+
 To see the whole flow without any accounts or API key: `backend/.venv/bin/python scripts/seed_demo_data.py`.
 
 ## Claude API key
@@ -50,7 +61,7 @@ While the consent screen is in "Testing" mode Google expires refresh tokens afte
 
 ## 3. Microsoft 365 (Outlook mail, calendar and Teams chats)
 
-You can do this whole section from the app: **Settings → Accounts → Outlook → Set up**. The app shows the redirect address to copy and has boxes for the three values below, so `.env` stays untouched.
+You can do this whole section from the app: **Apps → Outlook → Set up**. The app shows the redirect address to copy and has boxes for the three values below, so `.env` stays untouched.
 
 1. Open https://entra.microsoft.com and sign in with your work or school account → **App registrations → New registration**.
 2. Name it (for example "My assistant"), choose **Accounts in this organizational directory only**, and under **Redirect URI** pick **Web** and paste the address the app shows (`<PUBLIC_BASE_URL>/oauth/microsoft/callback`, e.g. `http://localhost:8000/oauth/microsoft/callback`). Register.

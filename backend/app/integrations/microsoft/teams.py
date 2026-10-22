@@ -1,7 +1,7 @@
 """Microsoft Teams chats (Microsoft Graph), read and sent as the CEO.
 
 Needs a work or school account and the ``Chat.ReadWrite`` scope, which the
-Teams account in Settings → Accounts asks for.
+Teams account in the Apps tab asks for.
 """
 
 from __future__ import annotations

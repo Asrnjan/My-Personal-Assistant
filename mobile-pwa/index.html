@@ -6,7 +6,7 @@
   <title>Chief of Staff</title>
   <meta name="description" content="Voice-first chief of staff: daily brief, confirmations and delegations.">
   <meta name="theme-color" content="#04060f">
-  <meta name="color-scheme" content="dark light">
+  <meta name="color-scheme" content="dark">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -16,20 +16,19 @@
   <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="styles.css">
   <script type="module" src="app.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
-  <div class="space" aria-hidden="true">
-    <div class="stars stars-1"></div>
-    <div class="stars stars-2"></div>
-    <div class="nebula"></div>
-    <div class="grid-floor"></div>
+  <div class="sky" aria-hidden="true">
+    <div class="sky-stars s1"></div>
+    <div class="sky-stars s2"></div>
+    <div class="sky-glow"></div>
   </div>
 
-  <header class="topbar glass">
+  <header class="topbar">
     <div class="brand">
       <span class="brand-mark" aria-hidden="true"></span>
       <div class="brand-text">
@@ -42,107 +41,210 @@
         <span class="conn-dot" aria-hidden="true"></span><span class="conn-text">Not connected</span>
       </span>
       <button id="open-settings" class="icon-btn" type="button" aria-label="Open settings" aria-haspopup="dialog">
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.9 4.6 1.7 1.7 0 0 0 9.93 3.04V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 8.9a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.9 4.6 1.7 1.7 0 0 0 9.93 3.04V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 8.9a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg>
       </button>
     </div>
   </header>
 
   <main id="main" class="layout">
     <div id="banners" class="banners">
-      <div id="connect-banner" class="banner glass" hidden>
-        <p><strong>Connect to your assistant.</strong> Enter your shared secret in Settings to load your brief.</p>
+      <div id="connect-banner" class="banner" hidden>
+        <p><strong>Connect to your assistant.</strong> Enter your shared secret to get started.</p>
         <button type="button" class="btn btn-primary" data-action="open-settings">Connect</button>
       </div>
-      <div id="ios-banner" class="banner glass" hidden>
+      <div id="ios-banner" class="banner" hidden>
         <p><strong>Get notifications on iPhone:</strong> tap <span class="kbd">Share</span> then <span class="kbd">Add to Home Screen</span>, and open the app from there (iOS 16.4+).</p>
         <button type="button" class="btn btn-ghost" data-action="dismiss-ios" aria-label="Dismiss iPhone install hint">Dismiss</button>
       </div>
     </div>
 
-    <section class="hero" aria-labelledby="orb-label">
-      <div class="orb-wrap">
-        <button id="orb" class="orb" type="button" data-state="idle" aria-label="Start talking" aria-describedby="orb-label">
-          <span class="orb-ring r1" aria-hidden="true"></span>
-          <span class="orb-ring r2" aria-hidden="true"></span>
-          <span class="orb-ring r3" aria-hidden="true"></span>
-          <span class="orb-halo" aria-hidden="true"></span>
-          <span class="orb-core" aria-hidden="true"></span>
-          <span class="orb-gloss" aria-hidden="true"></span>
-          <span class="orb-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
-          <svg class="orb-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg>
-        </button>
-      </div>
-      <p id="orb-label" class="orb-label" aria-live="polite">Tap to talk</p>
-      <p id="caption" class="caption" aria-live="polite"></p>
+    <!-- Home: talk, approve, see the day -->
+    <section id="view-home" class="view" data-view="home" aria-labelledby="greeting">
+      <div class="hero">
+        <h1 id="greeting" class="greeting">Hello</h1>
+        <div class="orb-wrap">
+          <button id="orb" class="orb" type="button" data-state="idle" aria-label="Start talking" aria-describedby="orb-label">
+            <canvas id="cluster" class="cluster" aria-hidden="true"></canvas>
+          </button>
+        </div>
+        <p id="orb-label" class="orb-label" aria-live="polite">Tap to talk</p>
+        <p id="caption" class="caption" aria-live="polite"></p>
+        <p id="reply-bubble" class="reply-bubble" aria-live="polite" hidden></p>
+        <div id="connect-prompt" class="connect-prompt" role="group" aria-label="Allow access" hidden>
+          <p class="connect-text">To do that, I need your permission to use:</p>
+          <div id="connect-buttons" class="connect-buttons"></div>
+        </div>
 
-      <form id="text-form" class="composer glass" autocomplete="off">
-        <label for="text-input" class="sr-only">Type a message</label>
-        <input id="text-input" name="text" type="text" placeholder="Or type: “brief me”, “delegate…”" enterkeyhint="send" maxlength="2000">
-        <button type="submit" class="send-btn" aria-label="Send message">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h14M13 6l6 6-6 6"/></svg>
-        </button>
-      </form>
+        <form id="text-form" class="composer" autocomplete="off">
+          <label for="text-input" class="sr-only">Type a message</label>
+          <input id="text-input" name="text" type="text" placeholder="Ask or tell me anything…" enterkeyhint="send" maxlength="2000">
+          <button type="submit" class="send-btn" aria-label="Send message">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </form>
+        <div class="chips" role="group" aria-label="Quick requests">
+          <button type="button" class="chip" data-say="Brief me">Brief me</button>
+          <button type="button" class="chip" data-say="What needs me today?">What needs me?</button>
+          <button type="button" class="chip" data-say="What's on my calendar today?">My calendar</button>
+        </div>
+      </div>
+
+      <section id="setup-card" class="panel setup" aria-labelledby="setup-heading" hidden>
+        <div class="panel-head">
+          <h2 id="setup-heading">Finish setting up</h2>
+          <span id="setup-progress" class="count"></span>
+        </div>
+        <ol id="setup-steps" class="setup-steps"></ol>
+      </section>
+
+      <section id="pending-section" class="panel" aria-labelledby="pending-heading">
+        <div class="panel-head">
+          <h2 id="pending-heading">Waiting for your OK <span id="pending-count" class="count" hidden></span></h2>
+        </div>
+        <ul id="pending-list" class="stack-list" aria-live="polite"></ul>
+        <p id="pending-empty" class="empty">Nothing waiting on you.</p>
+      </section>
+
+      <section id="brief-section" class="panel" aria-labelledby="brief-heading">
+        <div class="panel-head">
+          <h2 id="brief-heading">Today's brief</h2>
+          <div class="panel-tools">
+            <div class="segmented" role="group" aria-label="Brief type">
+              <button type="button" class="seg" data-kind="morning" aria-pressed="true">AM</button>
+              <button type="button" class="seg" data-kind="evening" aria-pressed="false">PM</button>
+            </div>
+            <button id="refresh-brief" class="icon-btn sm" type="button" aria-label="Refresh brief">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="brief-summary" class="brief-summary" hidden>
+          <p id="brief-text" class="brief-text"></p>
+          <p id="brief-meta" class="brief-meta"></p>
+          <div class="brief-actions">
+            <button id="play-brief" type="button" class="btn btn-ghost">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 5v14l11-7z"/></svg>Play brief
+            </button>
+            <button id="tell-more" type="button" class="btn btn-primary" aria-expanded="false" aria-controls="brief-details">Tell me more</button>
+          </div>
+          <ul id="brief-details" class="brief-details" hidden></ul>
+        </div>
+        <div id="brief-cards" class="cards" aria-live="polite"></div>
+        <p id="brief-empty" class="empty">Your brief will appear here.</p>
+      </section>
     </section>
 
-    <section id="brief-section" class="panel glass" aria-labelledby="brief-heading">
-      <div class="panel-head">
-        <h2 id="brief-heading"><span class="h-accent" aria-hidden="true"></span>Today's brief</h2>
-        <div class="panel-tools">
-          <div class="segmented" role="group" aria-label="Brief type">
-            <button type="button" class="seg" data-kind="morning" aria-pressed="true">AM</button>
-            <button type="button" class="seg" data-kind="evening" aria-pressed="false">PM</button>
-          </div>
-          <button id="refresh-brief" class="icon-btn sm" type="button" aria-label="Refresh brief">
+    <!-- Team: what you handed off -->
+    <section id="view-team" class="view" data-view="team" aria-labelledby="team-title" hidden>
+      <div class="view-head">
+        <h1 id="team-title">Team</h1>
+        <p class="view-sub">What you've handed off, and who has accepted.</p>
+      </div>
+      <section id="followups-section" class="panel" aria-labelledby="followups-heading">
+        <div class="panel-head">
+          <h2 id="followups-heading">Delegations</h2>
+          <button id="refresh-followups" class="icon-btn sm" type="button" aria-label="Refresh delegations">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>
           </button>
         </div>
+        <ul id="followups-list" class="stack-list"></ul>
+        <p id="followups-empty" class="empty">No delegations in flight.</p>
+      </section>
+    </section>
+
+    <!-- Chat: the conversation so far -->
+    <section id="view-chat" class="view" data-view="chat" aria-labelledby="chat-title" hidden>
+      <div class="view-head">
+        <h1 id="chat-title">Chat</h1>
+        <p class="view-sub">Everything you and your assistant said today.</p>
       </div>
-      <div id="brief-summary" class="brief-summary" hidden>
-        <p id="brief-text" class="brief-text"></p>
-        <p id="brief-meta" class="brief-meta"></p>
-        <div class="brief-actions">
-          <button id="play-brief" type="button" class="btn btn-ghost">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 5v14l11-7z"/></svg>Play brief
-          </button>
-          <button id="tell-more" type="button" class="btn btn-primary" aria-expanded="false" aria-controls="brief-details">Tell me more</button>
+      <section id="transcript-section" class="panel" aria-labelledby="transcript-heading">
+        <h2 id="transcript-heading" class="sr-only">Conversation</h2>
+        <ol id="transcript" class="transcript" aria-live="polite"></ol>
+        <p id="transcript-empty" class="empty">Say “brief me” to start.</p>
+      </section>
+    </section>
+
+    <!-- Apps: connect everything in one place -->
+    <section id="view-apps" class="view" data-view="apps" aria-labelledby="apps-title" hidden>
+      <div class="view-head">
+        <h1 id="apps-title">Apps</h1>
+        <p class="view-sub">Connect the tools your assistant works with. Each one takes about a minute.</p>
+        <div class="progress" role="progressbar" aria-labelledby="apps-progress-label" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="apps-progress">
+          <span class="progress-bar"></span>
         </div>
-        <ul id="brief-details" class="brief-details" hidden></ul>
+        <p id="apps-progress-label" class="hint">Sign in to see your apps.</p>
       </div>
-      <div id="brief-cards" class="cards" aria-live="polite"></div>
-      <p id="brief-empty" class="empty">Your brief will appear here.</p>
-    </section>
+      <p id="apps-note" class="hint warn" hidden></p>
 
-    <section id="pending-section" class="panel glass" aria-labelledby="pending-heading">
-      <div class="panel-head">
-        <h2 id="pending-heading"><span class="h-accent" aria-hidden="true"></span>Awaiting confirmation <span id="pending-count" class="count" hidden></span></h2>
-      </div>
-      <ul id="pending-list" class="stack-list" aria-live="polite"></ul>
-      <p id="pending-empty" class="empty">Nothing waiting on you.</p>
-    </section>
+      <section class="app-group" aria-labelledby="group-brain">
+        <h2 id="group-brain" class="group-title">Brain</h2>
+        <ul id="apps-brain" class="app-list"></ul>
+      </section>
 
-    <section id="followups-section" class="panel glass" aria-labelledby="followups-heading">
-      <div class="panel-head">
-        <h2 id="followups-heading"><span class="h-accent" aria-hidden="true"></span>Delegations</h2>
-        <button id="refresh-followups" class="icon-btn sm" type="button" aria-label="Refresh delegations">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>
-        </button>
-      </div>
-      <ul id="followups-list" class="stack-list"></ul>
-      <p id="followups-empty" class="empty">No delegations in flight.</p>
-    </section>
+      <section class="app-group" aria-labelledby="accounts-title">
+        <h2 id="accounts-title" class="group-title">Email, calendar and Teams</h2>
+        <p id="accounts-note" class="hint warn" hidden></p>
+        <ul id="accounts-list" class="app-list" aria-live="polite"></ul>
+        <details id="app-keys" class="app-keys">
+          <summary>One-time setup: register the app with Microsoft or Google</summary>
+          <form id="app-keys-form" class="field-row" autocomplete="off">
+            <label for="app-provider">Provider</label>
+            <select id="app-provider" class="select">
+              <option value="microsoft">Microsoft (Outlook and Teams)</option>
+              <option value="google">Google (Gmail and Calendar)</option>
+            </select>
+            <ol id="app-keys-steps" class="steps"></ol>
+            <a id="app-keys-link" class="btn btn-ghost link-btn" target="_blank" rel="noopener noreferrer" href="#">Open the console</a>
+            <p class="hint">Redirect URI to paste in the console:</p>
+            <div class="input-group">
+              <input id="redirect-uri" type="text" readonly aria-label="Redirect URI">
+              <button type="button" class="btn btn-ghost" id="copy-redirect">Copy</button>
+            </div>
+            <label for="app-client-id">Client ID</label>
+            <div class="input-group"><input id="app-client-id" name="client_id" required spellcheck="false" autocapitalize="off"></div>
+            <label for="app-client-secret">Client secret</label>
+            <div class="input-group"><input id="app-client-secret" name="client_secret" type="password" required autocomplete="off"></div>
+            <div id="tenant-row" class="field-row">
+              <label for="app-tenant">Tenant ID <span class="hint-inline">(Directory ID from Azure)</span></label>
+              <div class="input-group"><input id="app-tenant" name="tenant_id" placeholder="organizations" spellcheck="false" autocapitalize="off"></div>
+            </div>
+            <p id="app-keys-state" class="hint" aria-live="polite"></p>
+            <button type="submit" class="btn btn-primary btn-block">Save keys</button>
+          </form>
+        </details>
+      </section>
 
-    <section id="transcript-section" class="panel glass" aria-labelledby="transcript-heading">
-      <div class="panel-head">
-        <h2 id="transcript-heading"><span class="h-accent" aria-hidden="true"></span>Conversation</h2>
-      </div>
-      <ol id="transcript" class="transcript" aria-live="polite"></ol>
-      <div id="connect-prompt" class="connect-prompt" role="group" aria-label="Allow access" hidden>
-        <p class="connect-text">To do that, I need your permission to use:</p>
-        <div id="connect-buttons" class="connect-buttons"></div>
-      </div>
-      <p id="transcript-empty" class="empty">Say “brief me” to start.</p>
+      <section class="app-group" aria-labelledby="group-tasks">
+        <h2 id="group-tasks" class="group-title">Task boards</h2>
+        <ul id="apps-tasks" class="app-list"></ul>
+      </section>
+
+      <section class="app-group" aria-labelledby="group-chat">
+        <h2 id="group-chat" class="group-title">Chat and notifications</h2>
+        <ul id="apps-chat" class="app-list"></ul>
+      </section>
     </section>
   </main>
+
+  <nav class="tabbar" aria-label="Main">
+    <button type="button" class="tab" data-tab="home" aria-current="page">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l1.9 5.2L19 9l-4 3.6L16.2 18 12 15.2 7.8 18 9 12.6 5 9l5.1-.8z"/></svg>
+      <span>Home</span>
+    </button>
+    <button type="button" class="tab" data-tab="team">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9" cy="8" r="3.2"/><path d="M3 19c.6-3.2 3-5 6-5s5.4 1.8 6 5"/><circle cx="17" cy="9" r="2.4"/><path d="M16 14c2.6 0 4.4 1.5 5 4"/></svg>
+      <span>Team</span><span id="team-badge" class="tab-badge" hidden></span>
+    </button>
+    <button type="button" class="tab" data-tab="chat">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h16v11H9l-5 4z"/></svg>
+      <span>Chat</span>
+    </button>
+    <button type="button" class="tab" data-tab="apps">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><path d="M16.75 13.5v6.5M13.5 16.75H20"/></svg>
+      <span>Apps</span><span id="apps-badge" class="tab-badge dot" hidden></span>
+    </button>
+  </nav>
 
   <div id="tap-to-hear" class="tap-overlay" hidden>
     <button id="tap-to-hear-btn" type="button" class="tap-btn">
@@ -153,7 +255,29 @@
 
   <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 
-  <dialog id="settings" class="sheet glass" aria-labelledby="settings-title">
+  <!-- One app's setup: steps, a link, a field or two, Connect -->
+  <dialog id="app-sheet" class="sheet" aria-labelledby="app-sheet-title">
+    <form method="dialog" class="sheet-head">
+      <span id="app-sheet-tile" class="app-tile" aria-hidden="true"></span>
+      <div class="sheet-title-wrap">
+        <h2 id="app-sheet-title">App</h2>
+        <p id="app-sheet-desc" class="hint"></p>
+      </div>
+      <button class="icon-btn sm" value="close" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </form>
+    <ol id="app-sheet-steps" class="steps"></ol>
+    <a id="app-sheet-link" class="btn btn-ghost link-btn" target="_blank" rel="noopener noreferrer" href="#" hidden></a>
+    <form id="app-sheet-form" class="field-row" autocomplete="off">
+      <div id="app-sheet-fields" class="field-row"></div>
+      <p id="app-sheet-msg" class="hint" role="status" aria-live="polite"></p>
+      <button type="submit" id="app-sheet-connect" class="btn btn-primary btn-block">Connect</button>
+      <button type="button" id="app-sheet-disconnect" class="btn btn-ghost btn-block" hidden>Disconnect</button>
+    </form>
+  </dialog>
+
+  <dialog id="settings" class="sheet" aria-labelledby="settings-title">
     <form method="dialog" class="sheet-head">
       <h2 id="settings-title">Settings</h2>
       <button class="icon-btn sm" value="close" aria-label="Close settings">
@@ -167,7 +291,7 @@
       <form id="login-form" class="field-row" autocomplete="off">
         <label for="secret-input">Shared secret</label>
         <div class="input-group">
-          <input id="secret-input" name="secret" type="password" required autocomplete="current-password" placeholder="Your shared secret">
+          <input id="secret-input" name="secret" type="password" required autocomplete="current-password" placeholder="Shown when the server first starts">
           <button type="submit" class="btn btn-primary" id="login-btn">Connect</button>
         </div>
         <p id="login-error" class="error" role="alert" hidden></p>
@@ -175,37 +299,29 @@
       <button id="logout-btn" type="button" class="btn btn-ghost" hidden>Sign out</button>
     </section>
 
-    <section class="sheet-section" aria-labelledby="accounts-title">
-      <h3 id="accounts-title">Accounts</h3>
-      <p class="hint">Connect your email, calendar and Teams. You sign in with Microsoft or Google and tap <strong>Accept</strong>.</p>
-      <ul id="accounts-list" class="accounts-list" aria-live="polite"></ul>
-      <p id="accounts-note" class="hint warn" hidden></p>
-      <details id="app-keys" class="app-keys">
-        <summary>One-time setup: app keys</summary>
-        <p class="hint">Microsoft and Google ask every app to register once. Create the app in their console, then paste its keys here. Your secret is stored encrypted.</p>
-        <form id="app-keys-form" class="field-row" autocomplete="off">
-          <label for="app-provider">Provider</label>
-          <select id="app-provider" class="select">
-            <option value="microsoft">Microsoft (Outlook and Teams)</option>
-            <option value="google">Google (Gmail and Calendar)</option>
-          </select>
-          <p class="hint">Redirect URI to paste in the console:</p>
-          <div class="input-group">
-            <input id="redirect-uri" type="text" readonly aria-label="Redirect URI">
-            <button type="button" class="btn btn-ghost" id="copy-redirect">Copy</button>
-          </div>
-          <label for="app-client-id">Client ID</label>
-          <div class="input-group"><input id="app-client-id" name="client_id" required spellcheck="false" autocapitalize="off"></div>
-          <label for="app-client-secret">Client secret</label>
-          <div class="input-group"><input id="app-client-secret" name="client_secret" type="password" required autocomplete="off"></div>
-          <div id="tenant-row" class="field-row">
-            <label for="app-tenant">Tenant ID <span class="hint-inline">(Directory ID from Azure)</span></label>
-            <div class="input-group"><input id="app-tenant" name="tenant_id" placeholder="organizations" spellcheck="false" autocapitalize="off"></div>
-          </div>
-          <p id="app-keys-state" class="hint" aria-live="polite"></p>
-          <button type="submit" class="btn btn-primary">Save keys</button>
-        </form>
-      </details>
+    <section class="sheet-section" aria-labelledby="apps-link-title">
+      <h3 id="apps-link-title">Apps and accounts</h3>
+      <p class="hint">Email, calendar, Claude, task boards and chat apps are all connected from the Apps tab.</p>
+      <button type="button" class="btn btn-ghost" data-goto="apps">Open Apps</button>
+    </section>
+
+    <section class="sheet-section" aria-labelledby="wake-title">
+      <h3 id="wake-title">Call by name</h3>
+      <label class="switch-row" for="wake-toggle">
+        <input id="wake-toggle" type="checkbox" role="switch">
+        <span id="wake-label">Listen for “Atlas” while the app is open</span>
+      </label>
+      <p class="hint">Say the name, or the name and your request in one go: “Atlas, brief me”.</p>
+      <p id="wake-ios" class="hint" hidden>On iPhone, add a Siri shortcut instead and say <strong>“Hey Siri, Atlas”</strong>. Steps: docs/VOICE_SHORTCUTS.md.</p>
+      <p id="wake-unsupported" class="hint warn" hidden>This browser can't listen in the background. Use Chrome, or tap the stars.</p>
+    </section>
+
+    <section class="sheet-section" aria-labelledby="push-title">
+      <h3 id="push-title">Notifications</h3>
+      <p class="hint">Morning brief, evening wrap-up and P1 alerts.</p>
+      <button id="push-btn" type="button" class="btn btn-primary">Enable push notifications</button>
+      <p id="push-state" class="hint" aria-live="polite"></p>
+      <p id="ios-hint" class="hint warn" hidden>On iPhone, push works only after <strong>Add to Home Screen</strong> (iOS 16.4+). Open the app from the home screen icon, then enable notifications.</p>
     </section>
 
     <section class="sheet-section" aria-labelledby="api-title">
@@ -217,25 +333,6 @@
           <button type="submit" class="btn btn-ghost">Save</button>
         </div>
       </form>
-    </section>
-
-    <section class="sheet-section" aria-labelledby="wake-title">
-      <h3 id="wake-title">Call by name</h3>
-      <label class="switch-row" for="wake-toggle">
-        <input id="wake-toggle" type="checkbox" role="switch">
-        <span id="wake-label">Listen for “Atlas” while the app is open</span>
-      </label>
-      <p class="hint">Say the name, or the name and your request in one go: “Atlas, brief me”.</p>
-      <p id="wake-ios" class="hint" hidden>On iPhone, add a Siri shortcut instead and say <strong>“Hey Siri, Atlas”</strong>. Steps: docs/VOICE_SHORTCUTS.md.</p>
-      <p id="wake-unsupported" class="hint warn" hidden>This browser can't listen in the background. Use Chrome, or tap the orb.</p>
-    </section>
-
-    <section class="sheet-section" aria-labelledby="push-title">
-      <h3 id="push-title">Notifications</h3>
-      <p class="hint">Morning brief, evening wrap-up and P1 alerts.</p>
-      <button id="push-btn" type="button" class="btn btn-primary">Enable push notifications</button>
-      <p id="push-state" class="hint" aria-live="polite"></p>
-      <p id="ios-hint" class="hint warn" hidden>On iPhone, push works only after <strong>Add to Home Screen</strong> (iOS 16.4+). Open the app from the home screen icon, then enable notifications.</p>
     </section>
   </dialog>
 </body>

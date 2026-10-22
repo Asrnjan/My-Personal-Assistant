@@ -284,6 +284,16 @@ class ProviderAppRow(TimestampMixin, Base):
     tenant_id: Mapped[str | None] = mapped_column(String(64))
 
 
+class AppConnectionRow(TimestampMixin, Base):
+    """Credentials for one connected app (Claude, Jira, Telegram, ...) entered in the app
+    instead of ``.env``. The whole JSON blob is encrypted at rest with Fernet."""
+
+    __tablename__ = "app_connections"
+
+    app_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    data_enc: Mapped[str] = mapped_column(Text)
+
+
 class SyncStateRow(TimestampMixin, Base):
     """Incremental-sync cursors (sync tokens, delta links) per adapter and feed."""
 

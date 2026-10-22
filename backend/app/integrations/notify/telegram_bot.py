@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from typing import Any
 
 from app.domain.delegate import Delegate
@@ -105,8 +106,9 @@ class TelegramBot:
         if text:
             self._api.send_message(self._ceo, text)
 
-    def subscribe(self, bus: EventBus) -> None:
-        bus.subscribe(self.on_event)
+    def subscribe(self, bus: EventBus) -> Callable[[], None]:
+        """Returns the function that unsubscribes again."""
+        return bus.subscribe(self.on_event)
 
     # -- dispatch ---------------------------------------------------------------------
 
