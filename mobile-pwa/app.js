@@ -80,17 +80,19 @@ const ORB_ARIA = {
 };
 
 const MAX_TURNS = 6;
-// A request is sent once you have been quiet this long after your last word, so a
-// natural pause in the middle of a sentence doesn't cut it off.
-const END_PAUSE_MS = 2500;
+// When to send a request. The speech engine marks a phrase final once it hears you stop;
+// then a short extra pause is enough. While the last phrase is still unfinished, wait
+// longer, so a pause in the middle of a sentence doesn't cut it off.
+const QUICK_PAUSE_MS = 900;
+const END_PAUSE_MS = 2000;
 // After a spoken reply, how long to wait for a follow-up before going back to waiting
 // for the name.
-const FOLLOW_UP_MS = 7000;
+const FOLLOW_UP_MS = 15000;
 // Saying one of these ends the back-and-forth instead of listening again.
 const END_CONVERSATION = /^\s*(thanks|thank you|thankyou|that'?s all|that is all|that'?s it|stop|bye|goodbye|good bye|never ?mind|no thanks|no thank you|i'?m done|all done)\b/i;
 const RECORD_LIMIT_MS = 30000;
 // Recording stops by itself after this much quiet once you have started speaking.
-const SILENCE_STOP_MS = 2500;
+const SILENCE_STOP_MS = 1800;
 const SILENCE_LEVEL = 0.02;
 
 const state = {
@@ -117,6 +119,7 @@ const state = {
   view: 'home',
   connections: null,
   micLevel: 0,
+  utterances: [],
   // Listening again right after a spoken reply, without the name.
   followUp: false,
   heardSpeech: false,
@@ -296,6 +299,27 @@ function stopSpeaking() {
   if (state.orb === 'speaking') setOrb('idle');
 }
 
+// Chrome stops long utterances after about 15 seconds without firing onend, and can drop
+// onend when the utterance object is garbage collected. So long replies are spoken a few
+// sentences at a time, every utterance is kept referenced, and a watchdog notices when the
+// engine has gone quiet even if no event says so.
+const SPEAK_CHUNK_CHARS = 180;
+
+function speechChunks(text) {
+  const sentences = text.match(/[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g) || [text];
+  const chunks = [];
+  let current = '';
+  for (const sentence of sentences) {
+    if (current && (current + sentence).length > SPEAK_CHUNK_CHARS) {
+      chunks.push(current.trim());
+      current = '';
+    }
+    current += sentence;
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks.length ? chunks : [text];
+}
+
 function speakWithSynthesis(text, token) {
   return new Promise((resolve) => {
     const synth = window.speechSynthesis;
@@ -306,25 +330,40 @@ function speakWithSynthesis(text, token) {
     }
     let started = false;
     let settled = false;
+    let quietTicks = 0;
+    let watchdog = null;
     const finish = (ok) => {
       if (settled) return;
       settled = true;
       clearTimeout(startTimer);
+      clearInterval(watchdog);
+      state.utterances = [];
       resolve(ok);
     };
-    const utterance = new Utterance(text);
-    utterance.lang = document.documentElement.lang || 'en';
-    utterance.rate = 1.02;
-    utterance.onstart = () => {
-      started = true;
-      if (token === state.speakToken) setOrb('speaking');
-    };
-    utterance.onend = () => finish(true);
-    utterance.onerror = (event) => {
-      const err = event && event.error;
-      // "interrupted"/"canceled" mean we stopped it ourselves: that is not a failure.
-      finish(err === 'interrupted' || err === 'canceled');
-    };
+    const chunks = speechChunks(text);
+    state.utterances = chunks.map((chunk, index) => {
+      const utterance = new Utterance(chunk);
+      utterance.lang = document.documentElement.lang || 'en';
+      utterance.rate = 1.02;
+      utterance.onstart = () => {
+        if (!started) {
+          started = true;
+          // Only after speech has begun can "the engine is quiet" mean "finished".
+          watchdog = setInterval(() => {
+            quietTicks = synth.speaking || synth.pending ? 0 : quietTicks + 1;
+            if (quietTicks >= 3) finish(true);
+          }, 400);
+        }
+        if (token === state.speakToken) setOrb('speaking');
+      };
+      if (index === chunks.length - 1) utterance.onend = () => finish(true);
+      utterance.onerror = (event) => {
+        const err = event && event.error;
+        // "interrupted"/"canceled" mean we stopped it ourselves: that is not a failure.
+        finish(err === 'interrupted' || err === 'canceled');
+      };
+      return utterance;
+    });
     // Engines that silently refuse (no user gesture) never fire onstart.
     const startTimer = setTimeout(() => {
       if (!started) {
@@ -334,7 +373,7 @@ function speakWithSynthesis(text, token) {
     }, 4000);
     try {
       synth.cancel();
-      synth.speak(utterance);
+      for (const utterance of state.utterances) synth.speak(utterance);
     } catch {
       finish(false);
     }
@@ -467,8 +506,10 @@ function startRecognition(Ctor) {
     }
     if (cluster) cluster.bump(0.3);
     setCaption(heard());
+    const done = !interim.trim();
+    showGotIt(done);
     clearTimeout(pauseTimer);
-    pauseTimer = setTimeout(send, END_PAUSE_MS);
+    pauseTimer = setTimeout(send, done ? QUICK_PAUSE_MS : END_PAUSE_MS);
   };
   rec.onerror = (event) => {
     const err = event && event.error;
@@ -487,6 +528,12 @@ function startRecognition(Ctor) {
     // Stopped by a tap or by the engine: send whatever was heard.
     if (!handled && heard()) {
       send();
+      return;
+    }
+    // Chrome gives up after several quiet seconds; while waiting for a reply, keep going
+    // until the follow-up window is over.
+    if (!handled && state.followUp && Date.now() < (state.followUpUntil || 0)) {
+      startRecognition(Ctor);
       return;
     }
     if (!handled && state.orb === 'listening') {
@@ -602,8 +649,11 @@ function startWake() {
     }
     if (start < 0) return;
     setCaption(request());
+    const last = event.results[event.results.length - 1];
+    const done = Boolean(last && last.isFinal) && Boolean(request());
+    showGotIt(done);
     clearTimeout(pauseTimer);
-    pauseTimer = setTimeout(finish, END_PAUSE_MS);
+    pauseTimer = setTimeout(finish, done ? QUICK_PAUSE_MS : END_PAUSE_MS);
   };
   rec.onerror = (event) => {
     if (event && (event.error === 'not-allowed' || event.error === 'service-not-allowed')) {
@@ -628,6 +678,16 @@ function startWake() {
   } catch {
     state.wakeRec = null;
   }
+}
+
+// Show at once that a finished phrase was heard, so the short wait before sending doesn't
+// look like nothing is happening.
+function showGotIt(done) {
+  if (state.orb === 'thinking' || state.orb === 'speaking') return;
+  let label = ORB_LABELS.listening;
+  if (done) label = 'Got it…';
+  else if (state.followUp) label = 'Listening… say “thanks” when you’re done';
+  $('orb-label').textContent = label;
 }
 
 // The name was heard: look like listening without stopping the session that is
@@ -955,6 +1015,7 @@ function keepListeningOn() {
 function listenForFollowUp() {
   if (document.visibilityState === 'hidden' || state.orb !== 'idle' || !getToken()) return;
   state.followUp = true;
+  state.followUpUntil = Date.now() + FOLLOW_UP_MS;
   setTimeout(() => {
     // The reply may have been interrupted, or something else started meanwhile.
     if (!state.followUp || state.orb !== 'idle') return;

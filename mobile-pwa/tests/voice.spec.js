@@ -38,12 +38,14 @@ test('a long request with pauses is sent whole, once you stop talking', async ({
   await page.goto('/');
   await page.getByRole('button', { name: 'Start talking' }).click();
   await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
-  await page.evaluate(() => window.__recognitions[0].__continue('Delegate the vendor review'));
-  await page.waitForTimeout(1200); // a natural pause mid-sentence
+  // Still talking: the engine hasn't finished the phrase, so a pause doesn't send it.
+  await page.evaluate(() => window.__recognitions[0].__hear('Delegate the vendor review'));
+  await page.waitForTimeout(1200);
   expect(findCalls(calls, 'POST', '/converse')).toHaveLength(0);
-  await page.evaluate(() => window.__recognitions[0].__continue('to Rahul, due Friday'));
+  await page.evaluate(() => window.__recognitions[0].__say('Delegate the vendor review to Rahul, due Friday'));
+  await expect(page.locator('#orb-label')).toHaveText('Got it…');
   await expect(page.locator('#caption')).toHaveText('Delegate the vendor review to Rahul, due Friday');
-  await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { timeout: 6000 }).toBe(1);
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length).toBe(1);
   expect(findCalls(calls, 'POST', '/converse')[0].body.text).toBe('Delegate the vendor review to Rahul, due Friday');
 });
 
@@ -184,4 +186,62 @@ test('pushed WebSocket events show a toast and refresh the brief', async ({ page
 
   socket.socket.send(JSON.stringify({ type: 'event', kind: 'notice', payload: { text: 'Rahul acknowledged the vendor review.' } }));
   await expect(page.locator('.toast').last()).toContainText('Rahul acknowledged');
+});
+
+test('keeps listening after a reply even when the browser never says speech ended', async ({ page }) => {
+  const { calls } = await setup(page, { speech: { synthesis: 'no-end' } });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
+  await page.evaluate(() => window.__recognitions[0].__say('brief me'));
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { timeout: 6000 }).toBe(1);
+  await expect.poll(
+    () => page.evaluate(() => window.__recognitions.filter((r) => r.purpose === 'turn' && r.started && !r.ended).length),
+    { timeout: 6000 },
+  ).toBe(1);
+  await expect(page.locator('#orb-label')).toHaveText('Listening… say “thanks” when you’re done');
+});
+
+test('a long reply is spoken a few sentences at a time', async ({ page }) => {
+  const long = 'First thing today is the board deck, which needs your sign-off by noon. '
+    + 'Second, Rahul can take the vendor review because he handled the last one. '
+    + 'Third, the agency pitch clashes with the investor call, so I suggest declining it. '
+    + 'Shall I go ahead?';
+  await setup(page, { overrides: { 'POST /converse': () => ({ json: converseReply(long) }) } });
+  await page.goto('/');
+  await page.getByLabel('Type a message').fill('brief me');
+  await page.getByLabel('Type a message').press('Enter');
+  await expect.poll(() => page.evaluate(() => window.__spoken.length)).toBeGreaterThan(1);
+  const spoken = await page.evaluate(() => window.__spoken);
+  expect(spoken.join(' ')).toBe(long);
+  for (const chunk of spoken) expect(chunk.length).toBeLessThanOrEqual(180);
+});
+
+test('waiting for a reply survives the browser giving up early', async ({ page }) => {
+  const { calls } = await setup(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
+  await page.evaluate(() => window.__recognitions[0].__say('brief me'));
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { timeout: 6000 }).toBe(1);
+  const turns = () => page.evaluate(() => window.__recognitions.filter((r) => r.purpose === 'turn').length);
+  await expect.poll(turns).toBe(2);
+  // Chrome ends a quiet session by itself; Atlas starts listening again.
+  await page.evaluate(() => window.__recognitions.filter((r) => r.purpose === 'turn').pop().stop());
+  await expect.poll(turns).toBe(3);
+  await expect(page.locator('#orb')).toHaveAttribute('data-state', 'listening');
+  await page.evaluate(() => window.__recognitions.filter((r) => r.purpose === 'turn').pop().__say('what about tomorrow'));
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { timeout: 6000 }).toBe(2);
+  expect(findCalls(calls, 'POST', '/converse')[1].body.text).toBe('what about tomorrow');
+});
+
+test('a finished sentence is sent in about a second', async ({ page }) => {
+  const { calls } = await setup(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
+  const t0 = Date.now();
+  await page.evaluate(() => window.__recognitions[0].__say('What is on my calendar today?'));
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { intervals: [50] }).toBe(1);
+  expect(Date.now() - t0).toBeLessThan(1600);
 });

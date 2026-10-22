@@ -328,7 +328,8 @@ async function stubSpeech(page, options = {}) {
         window.__spoken.push(utterance.text);
         setTimeout(() => {
           if (utterance.onstart) utterance.onstart();
-          setTimeout(() => utterance.onend && utterance.onend(), 20);
+          // 'no-end' copies Chrome's bug: the speech finishes but onend never fires.
+          if (o.synthesis !== 'no-end') setTimeout(() => utterance.onend && utterance.onend(), 20);
         }, 0);
       },
     };
