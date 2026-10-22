@@ -92,6 +92,9 @@ class ActionKind(StrEnum):
     REPLY_EMAIL = "reply_email"
     TEAMS_MESSAGE = "teams_message"
     BOOK_MEETING = "book_meeting"
+    # Changing who is on the CEO's team.
+    ADD_CONTACT = "add_contact"
+    REMOVE_CONTACT = "remove_contact"
 
 
 class ActionStatus(StrEnum):

@@ -11,15 +11,17 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, tzinfo
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.audit import audit
 from app.clock import Clock
-from app.db.models import DecisionRow, ItemRow, PendingActionRow
+from app.db.models import DecisionRow, DelegateRow, ItemRow, PendingActionRow
+from app.domain.delegate import Delegate
 from app.domain.enums import (
     ActionKind,
     ActionStatus,
@@ -32,6 +34,7 @@ from app.domain.enums import (
 )
 from app.engine.approval import ApprovalPolicy, Level
 from app.engine.briefing import clean_title
+from app.engine.contacts import forget_contact, save_contact, writable_contacts
 from app.engine.delegation import DelegationService, calendar_for, tasks_for
 from app.integrations.base import NewEvent, OutboundEmail
 
@@ -48,6 +51,8 @@ FREE_KINDS = frozenset(
         ActionKind.REPLY_EMAIL,
         ActionKind.TEAMS_MESSAGE,
         ActionKind.BOOK_MEETING,
+        ActionKind.ADD_CONTACT,
+        ActionKind.REMOVE_CONTACT,
     }
 )
 
@@ -102,8 +107,12 @@ class ActionService:
         tz: tzinfo,
         clock: Clock,
         on_decision: DecisionHook | None = None,
+        *,
+        contacts_path: Path | None = None,
     ) -> None:
         self._sessions = session_factory
+        # Team changes are written here too, so the next start doesn't undo them.
+        self._contacts_path = contacts_path if writable_contacts(contacts_path) else None
         self._delegation = delegation
         self._policy = policy
         self._tz = tz
@@ -282,9 +291,47 @@ class ActionService:
             f"Dropped {clean_title(item.title)}.",
         )
 
+    def _add_contact(self, s: Session, params: dict[str, Any]) -> _Outcome:
+        person = Delegate.model_validate(params["delegate"])
+        if s.get(DelegateRow, person.id) is not None:
+            return _Outcome(False, f"Someone on your team already has the id {person.id}.")
+        s.add(DelegateRow(**person.model_dump(mode="json")))
+        if self._contacts_path is not None:
+            save_contact(self._contacts_path, person)
+        audit(s, "delegate.create", "ok", target=person.id, actor="ceo", via="conversation")
+        return _Outcome(True, f"Added {person.full_name} to your team.")
+
+    def _remove_contact(self, s: Session, params: dict[str, Any]) -> _Outcome:
+        delegate_id = str(params["delegate_id"])
+        row = s.get(DelegateRow, delegate_id)
+        if row is None:
+            return _Outcome(False, "They're no longer on your team.")
+        name = row.full_name
+        # Past decisions keep their brief and the audit log keeps the id.
+        s.execute(
+            update(ItemRow)
+            .where(ItemRow.suggested_delegate_id == delegate_id)
+            .values(suggested_delegate_id=None)
+        )
+        s.execute(
+            update(DecisionRow)
+            .where(DecisionRow.delegate_id == delegate_id)
+            .values(delegate_id=None)
+        )
+        s.delete(row)
+        if self._contacts_path is not None:
+            forget_contact(self._contacts_path, delegate_id)
+        audit(s, "delegate.delete", "ok", target=delegate_id, actor="ceo", via="conversation")
+        return _Outcome(True, f"Removed {name} from your team.")
+
     def _execute_free(self, s: Session, row: PendingActionRow) -> _Outcome:
-        """Send an email or Teams message, or book a meeting, exactly as read back."""
+        """Send an email or Teams message, book a meeting, or change the team, exactly as
+        read back."""
         params = row.params or {}
+        if row.kind == ActionKind.ADD_CONTACT:
+            return self._add_contact(s, params)
+        if row.kind == ActionKind.REMOVE_CONTACT:
+            return self._remove_contact(s, params)
         adapters = self._delegation.adapters()
         source = Source(params["source"]) if params.get("source") else None
         if row.kind in (ActionKind.SEND_EMAIL, ActionKind.REPLY_EMAIL):

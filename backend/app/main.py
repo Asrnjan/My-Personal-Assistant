@@ -160,7 +160,15 @@ def create_app(
     briefer = Briefer(session_factory, app_config, clock)
     learning = LearningService(session_factory, clock)
     delegation = DelegationService(llm, adapters, notifiers, tz, clock)
-    actions = ActionService(session_factory, delegation, policy, tz, clock, learning.on_decision)
+    actions = ActionService(
+        session_factory,
+        delegation,
+        policy,
+        tz,
+        clock,
+        learning.on_decision,
+        contacts_path=settings.contacts_path,
+    )
     followups = FollowUpService(
         session_factory, llm, adapters, notifiers, policy, notices, tz, clock
     )

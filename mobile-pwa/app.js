@@ -43,6 +43,8 @@ const ACTION_KINDS = {
   reply_email: 'Reply',
   teams_message: 'Teams message',
   book_meeting: 'Book meeting',
+  add_contact: 'Add to team',
+  remove_contact: 'Remove from team',
 };
 
 const ACCOUNT_NAMES = { outlook: 'Outlook', google: 'Google', teams: 'Microsoft Teams' };

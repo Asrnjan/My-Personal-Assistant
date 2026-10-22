@@ -31,11 +31,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.audit import audit
 from app.clock import Clock
 from app.db.models import ConversationRow, ItemRow
+from app.domain.delegate import Delegate
 from app.domain.enums import ActionKind, ApprovedVia, ItemKind, ItemStatus, PriorityBand, Source
 from app.engine.actions import ActionError, ActionResult, ActionService, PendingAction
 from app.engine.approval import ApprovalPolicy
 from app.engine.briefing import Brief, Briefer, BriefItem, clean_title, spoken_time
-from app.engine.contacts import all_delegates, display_names
+from app.engine.contacts import all_delegates, display_names, new_contact_id
 from app.engine.delegation import (
     DelegationService,
     NameResolver,
@@ -109,6 +110,31 @@ _YES_WORDS = re.compile(
 )
 _TIME = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", re.IGNORECASE)
 _ADDRESS = re.compile(r"[^@\s<>]+@[^@\s<>]+\.[a-z]{2,}", re.IGNORECASE)
+
+# Speech engines write a spoken address as words: "priya dot sharma at acme dot co dot in".
+_DOMAIN_ENDINGS = (
+    "com|org|net|io|co|in|ai|uk|us|de|fr|es|it|nl|au|ca|sg|ae|jp|edu|gov|info|biz|me|app|dev"
+)
+_SPOKEN_ADDRESS = re.compile(
+    r"\b([a-z0-9][a-z0-9_%+-]*(?:\s*(?:\bdot\b|\.)\s*[a-z0-9_%+-]+)*)"
+    r"\s+(?:at|@)\s+"
+    r"([a-z0-9-]+(?:\s*(?:\bdot\b|\.)\s*[a-z0-9-]+)*\s*(?:\bdot\b|\.)\s*(?:"
+    + _DOMAIN_ENDINGS
+    + r"))\b",
+    re.IGNORECASE,
+)
+_DOT = re.compile(r"\s*(?:\bdot\b|\.)\s*", re.IGNORECASE)
+
+
+def spoken_addresses(text: str) -> str:
+    """Turn "priya at acme dot com" into "priya@acme.com", leaving everything else alone."""
+
+    def join(match: re.Match[str]) -> str:
+        local = _DOT.sub(".", match.group(1)).lower()
+        domain = _DOT.sub(".", match.group(2)).lower()
+        return f"{local}@{domain}"
+
+    return _SPOKEN_ADDRESS.sub(join, text)
 
 
 def _and_list(names: list[str]) -> str:
@@ -286,6 +312,39 @@ TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {"rule": {"type": "string"}},
             "required": ["rule"],
+        },
+    },
+    {
+        "name": "add_contact",
+        "description": (
+            "Propose adding a person to the CEO's team, so they can be delegated to and "
+            "emailed. Use the name and email address exactly as the CEO said them. Returns a "
+            "read-back; nothing changes until the CEO says yes."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "full_name": {"type": "string"},
+                "email": {"type": "string"},
+                "areas": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "What they look after, e.g. finance, hiring.",
+                },
+            },
+            "required": ["full_name", "email"],
+        },
+    },
+    {
+        "name": "remove_contact",
+        "description": (
+            "Propose removing a person from the CEO's team. Returns a read-back; nothing "
+            "changes until the CEO says yes."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"who": {"type": "string", "description": "Their name."}},
+            "required": ["who"],
         },
     },
     {
@@ -468,7 +527,7 @@ class ConversationAgent:
     ) -> ConverseResponse:
         state = self._load(conversation_id)
         state.awaiting = self._still_pending(state.awaiting)
-        turn = _Turn(text=text.strip()[:2000], via=via)
+        turn = _Turn(text=spoken_addresses(text.strip()[:2000]), via=via)
         if not turn.text:
             reply = "Sorry, I didn't catch that."
         elif self._policy.forbidden_request(turn.text):
@@ -1008,6 +1067,48 @@ class ConversationAgent:
         if match.delegate is None:
             return match.question or "Who do you mean?"
         return match.delegate.full_name, str(match.delegate.email).lower()
+
+    def _tool_add_contact(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        name = " ".join(str(args.get("full_name", "")).split())
+        address = spoken_addresses(str(args.get("email", "")).strip()).lower()
+        if not name:
+            return self._ask(turn, "What's their name?")
+        if not _ADDRESS.fullmatch(address):
+            return self._ask(turn, f"What's {name}'s email address?")
+        # Only an address the CEO said themselves, never one read out of an email.
+        if not self._said_by_ceo(state, turn, address):
+            return self._ask(turn, f"What's {name}'s email address? Please say it to me.")
+        areas = [a.strip() for a in args.get("areas") or [] if str(a).strip()][:10]
+        with self._sessions() as s:
+            team = all_delegates(s)
+        same = next((d for d in team if str(d.email).lower() == address), None)
+        if same is not None:
+            return {"error": f"{same.full_name} already has that address on your team."}
+        person = Delegate(
+            id=new_contact_id(name, {d.id for d in team}),
+            full_name=name,
+            aliases=[name.split()[0]],
+            email=address,
+            ownership_areas=areas,
+        )
+        looks_after = f", who looks after {_and_list(areas)}" if areas else ""
+        readback = f"Adding {name}, {address}{looks_after}, to your team. Confirm?"
+        params = {
+            "title": f"Add {name} to your team",
+            "delegate": person.model_dump(mode="json"),
+        }
+        return self._propose(state, turn, ActionKind.ADD_CONTACT, None, readback, params)
+
+    def _tool_remove_contact(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        who = str(args.get("who", "")).strip()
+        with self._sessions() as s:
+            match = NameResolver(all_delegates(s)).resolve(who)
+        if match.delegate is None:
+            return self._ask(turn, match.question or "Who should I remove?")
+        person = match.delegate
+        readback = f"Removing {person.full_name}, {person.email}, from your team. Confirm?"
+        params = {"title": f"Remove {person.full_name} from your team", "delegate_id": person.id}
+        return self._propose(state, turn, ActionKind.REMOVE_CONTACT, None, readback, params)
 
     def _ask(self, turn: _Turn, question: str) -> dict[str, Any]:
         turn.questions.append(question)
