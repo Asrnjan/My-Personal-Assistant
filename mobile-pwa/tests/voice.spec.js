@@ -38,12 +38,14 @@ test('a long request with pauses is sent whole, once you stop talking', async ({
   await page.goto('/');
   await page.getByRole('button', { name: 'Start talking' }).click();
   await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
-  await page.evaluate(() => window.__recognitions[0].__continue('Delegate the vendor review'));
-  await page.waitForTimeout(1200); // a natural pause mid-sentence
+  // Still talking: the engine hasn't finished the phrase, so a pause doesn't send it.
+  await page.evaluate(() => window.__recognitions[0].__hear('Delegate the vendor review'));
+  await page.waitForTimeout(1200);
   expect(findCalls(calls, 'POST', '/converse')).toHaveLength(0);
-  await page.evaluate(() => window.__recognitions[0].__continue('to Rahul, due Friday'));
+  await page.evaluate(() => window.__recognitions[0].__say('Delegate the vendor review to Rahul, due Friday'));
+  await expect(page.locator('#orb-label')).toHaveText('Got it…');
   await expect(page.locator('#caption')).toHaveText('Delegate the vendor review to Rahul, due Friday');
-  await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { timeout: 6000 }).toBe(1);
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length).toBe(1);
   expect(findCalls(calls, 'POST', '/converse')[0].body.text).toBe('Delegate the vendor review to Rahul, due Friday');
 });
 
@@ -231,4 +233,15 @@ test('waiting for a reply survives the browser giving up early', async ({ page }
   await page.evaluate(() => window.__recognitions.filter((r) => r.purpose === 'turn').pop().__say('what about tomorrow'));
   await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { timeout: 6000 }).toBe(2);
   expect(findCalls(calls, 'POST', '/converse')[1].body.text).toBe('what about tomorrow');
+});
+
+test('a finished sentence is sent in about a second', async ({ page }) => {
+  const { calls } = await setup(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
+  const t0 = Date.now();
+  await page.evaluate(() => window.__recognitions[0].__say('What is on my calendar today?'));
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { intervals: [50] }).toBe(1);
+  expect(Date.now() - t0).toBeLessThan(1600);
 });

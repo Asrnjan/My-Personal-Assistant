@@ -80,9 +80,11 @@ const ORB_ARIA = {
 };
 
 const MAX_TURNS = 6;
-// A request is sent once you have been quiet this long after your last word, so a
-// natural pause in the middle of a sentence doesn't cut it off.
-const END_PAUSE_MS = 2500;
+// When to send a request. The speech engine marks a phrase final once it hears you stop;
+// then a short extra pause is enough. While the last phrase is still unfinished, wait
+// longer, so a pause in the middle of a sentence doesn't cut it off.
+const QUICK_PAUSE_MS = 900;
+const END_PAUSE_MS = 2000;
 // After a spoken reply, how long to wait for a follow-up before going back to waiting
 // for the name.
 const FOLLOW_UP_MS = 15000;
@@ -90,7 +92,7 @@ const FOLLOW_UP_MS = 15000;
 const END_CONVERSATION = /^\s*(thanks|thank you|thankyou|that'?s all|that is all|that'?s it|stop|bye|goodbye|good bye|never ?mind|no thanks|no thank you|i'?m done|all done)\b/i;
 const RECORD_LIMIT_MS = 30000;
 // Recording stops by itself after this much quiet once you have started speaking.
-const SILENCE_STOP_MS = 2500;
+const SILENCE_STOP_MS = 1800;
 const SILENCE_LEVEL = 0.02;
 
 const state = {
@@ -504,8 +506,10 @@ function startRecognition(Ctor) {
     }
     if (cluster) cluster.bump(0.3);
     setCaption(heard());
+    const done = !interim.trim();
+    showGotIt(done);
     clearTimeout(pauseTimer);
-    pauseTimer = setTimeout(send, END_PAUSE_MS);
+    pauseTimer = setTimeout(send, done ? QUICK_PAUSE_MS : END_PAUSE_MS);
   };
   rec.onerror = (event) => {
     const err = event && event.error;
@@ -645,8 +649,11 @@ function startWake() {
     }
     if (start < 0) return;
     setCaption(request());
+    const last = event.results[event.results.length - 1];
+    const done = Boolean(last && last.isFinal) && Boolean(request());
+    showGotIt(done);
     clearTimeout(pauseTimer);
-    pauseTimer = setTimeout(finish, END_PAUSE_MS);
+    pauseTimer = setTimeout(finish, done ? QUICK_PAUSE_MS : END_PAUSE_MS);
   };
   rec.onerror = (event) => {
     if (event && (event.error === 'not-allowed' || event.error === 'service-not-allowed')) {
@@ -671,6 +678,16 @@ function startWake() {
   } catch {
     state.wakeRec = null;
   }
+}
+
+// Show at once that a finished phrase was heard, so the short wait before sending doesn't
+// look like nothing is happening.
+function showGotIt(done) {
+  if (state.orb === 'thinking' || state.orb === 'speaking') return;
+  let label = ORB_LABELS.listening;
+  if (done) label = 'Got it…';
+  else if (state.followUp) label = 'Listening… say “thanks” when you’re done';
+  $('orb-label').textContent = label;
 }
 
 // The name was heard: look like listening without stopping the session that is

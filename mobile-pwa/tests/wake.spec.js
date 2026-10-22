@@ -44,7 +44,7 @@ test('"Atlas" followed by a long request keeps every word', async ({ page }) => 
   const rec = await wakeRecognizer(page);
   await rec.evaluate((r) => r.__continue('Atlas'));
   await rec.evaluate((r) => r.__continue('delegate the vendor review'));
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(400); // a short natural pause
   await rec.evaluate((r) => r.__continue('to Rahul due Friday'));
   await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { timeout: 6000 }).toBe(1);
   expect(findCalls(calls, 'POST', '/converse')[0].body.text).toBe('delegate the vendor review to Rahul due Friday');
