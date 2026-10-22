@@ -12,6 +12,7 @@ const STORAGE = {
   iosHintDismissed: 'cos.iosHintDismissed',
   name: 'cos.assistantName',
   wake: 'cos.listenForName',
+  keepListening: 'cos.keepListening',
 };
 
 const BANDS = {
@@ -77,9 +78,17 @@ const ORB_ARIA = {
 };
 
 const MAX_TURNS = 6;
-const RECORD_LIMIT_MS = 15000;
+// A request is sent once you have been quiet this long after your last word, so a
+// natural pause in the middle of a sentence doesn't cut it off.
+const END_PAUSE_MS = 2500;
+// After a spoken reply, how long to wait for a follow-up before going back to waiting
+// for the name.
+const FOLLOW_UP_MS = 7000;
+// Saying one of these ends the back-and-forth instead of listening again.
+const END_CONVERSATION = /^\s*(thanks|thank you|thankyou|that'?s all|that is all|that'?s it|stop|bye|goodbye|good bye|never ?mind|no thanks|no thank you|i'?m done|all done)\b/i;
+const RECORD_LIMIT_MS = 30000;
 // Recording stops by itself after this much quiet once you have started speaking.
-const SILENCE_STOP_MS = 1500;
+const SILENCE_STOP_MS = 2500;
 const SILENCE_LEVEL = 0.02;
 
 const state = {
@@ -106,6 +115,10 @@ const state = {
   view: 'home',
   connections: null,
   micLevel: 0,
+  // Listening again right after a spoken reply, without the name.
+  followUp: false,
+  heardSpeech: false,
+  discardRecording: false,
   sheetApp: null,
 };
 
@@ -253,7 +266,10 @@ function setOrb(next) {
   orb.setAttribute('aria-label', ORB_ARIA[next]);
   orb.setAttribute('aria-pressed', next === 'listening' ? 'true' : 'false');
   if (cluster) cluster.setState(next);
-  $('orb-label').textContent = next === 'idle' && wakeOn() ? `Say “${state.name}” or tap` : ORB_LABELS[next];
+  let label = ORB_LABELS[next];
+  if (next === 'idle' && wakeOn()) label = `Say “${state.name}” or tap`;
+  if (next === 'listening' && state.followUp) label = 'Listening… say “thanks” when you’re done';
+  $('orb-label').textContent = label;
   if (next === 'idle') scheduleWake();
   else stopWake();
 }
@@ -388,6 +404,8 @@ function onOrbClick() {
     return;
   }
   if (state.orb === 'listening') {
+    if (state.followUp && state.recorder) state.discardRecording = !state.heardSpeech;
+    state.followUp = false;
     stopListening();
     return;
   }
@@ -412,53 +430,65 @@ function stopListening() {
   if (state.recorder && state.recorder.state !== 'inactive') state.recorder.stop();
 }
 
+// Listens for one request. Speech engines split a sentence into several results at every
+// short pause; they are joined and sent only after END_PAUSE_MS of quiet (or a tap).
 function startRecognition(Ctor) {
-  let finalText = '';
-  let interimText = '';
+  const finals = {}; // result index -> final text (results accumulate within a session)
+  let interim = '';
   let handled = false;
-  const send = (text) => {
+  let pauseTimer = null;
+  const heard = () => [...Object.keys(finals).sort((a, b) => a - b).map((k) => finals[k]), interim]
+    .join(' ').replace(/\s+/g, ' ').trim();
+  const send = () => {
+    const text = heard();
+    if (handled || !text) return;
     handled = true;
+    clearTimeout(pauseTimer);
     state.recognition = null;
     try { rec.stop(); } catch { /* ignore */ }
     sendText(text, { source: 'voice' });
   };
   const rec = new Ctor();
+  rec.purpose = 'turn';
   state.recognition = rec;
   rec.lang = navigator.language || 'en-US';
   rec.interimResults = true;
-  rec.continuous = false;
+  rec.continuous = true;
   rec.maxAlternatives = 1;
   rec.onstart = () => setOrb('listening');
   rec.onresult = (event) => {
-    let interim = '';
+    interim = '';
     for (let i = event.resultIndex || 0; i < event.results.length; i++) {
       const result = event.results[i];
-      if (result.isFinal) finalText += result[0].transcript;
-      else interim += result[0].transcript;
+      if (result.isFinal) finals[i] = result[0].transcript;
+      else interim += ` ${result[0].transcript}`;
     }
-    interimText = interim;
     if (cluster) cluster.bump(0.3);
-    setCaption(finalText || interim);
-    if (finalText.trim() && !handled) send(finalText.trim());
+    setCaption(heard());
+    clearTimeout(pauseTimer);
+    pauseTimer = setTimeout(send, END_PAUSE_MS);
   };
   rec.onerror = (event) => {
     const err = event && event.error;
     if (err === 'not-allowed' || err === 'service-not-allowed') {
       toast('Microphone access was blocked. Allow it in your browser settings or type instead.', { variant: 'error' });
     } else if (err === 'no-speech') {
-      toast('I did not catch that. Tap and try again.');
+      // Silence after a reply just means the conversation is over.
+      if (!state.followUp) toast('I did not catch that. Tap and try again.');
     } else if (err && err !== 'aborted') {
       toast(`Speech recognition error: ${err}`, { variant: 'error' });
     }
   };
   rec.onend = () => {
+    clearTimeout(pauseTimer);
     if (state.recognition === rec) state.recognition = null;
-    // Some engines end without ever marking a result final; use what was heard.
-    if (!handled && interimText.trim()) {
-      send(interimText.trim());
+    // Stopped by a tap or by the engine: send whatever was heard.
+    if (!handled && heard()) {
+      send();
       return;
     }
     if (!handled && state.orb === 'listening') {
+      state.followUp = false;
       setOrb('idle');
       setCaption('');
     }
@@ -525,6 +555,7 @@ function stopWake() {
   const rec = state.wakeRec;
   state.wakeRec = null;
   if (rec) {
+    if (rec.cancelRequest) rec.cancelRequest(); // a tap or a hidden page drops a half-heard request
     try { rec.abort(); } catch { /* already stopped */ }
   }
 }
@@ -536,19 +567,41 @@ function startWake() {
   rec.lang = navigator.language || 'en-US';
   rec.continuous = true;
   rec.interimResults = true;
+  rec.purpose = 'wake';
+  // Once the name is heard, the rest of the request is collected in this same session
+  // (restarting would drop the words said straight after the name) until a pause.
+  let start = -1; // index of the result that contained the name
+  const parts = {};
+  let pauseTimer = null;
+  const request = () => Object.keys(parts).sort((a, b) => a - b).map((k) => parts[k])
+    .join(' ').replace(/\s+/g, ' ').trim();
+  rec.cancelRequest = () => clearTimeout(pauseTimer);
+  const finish = () => {
+    const text = request();
+    stopWake();
+    if (text) sendText(text, { source: 'voice' });
+    else startListening(); // just the name: listen for the request
+  };
   rec.onresult = (event) => {
     for (let i = event.resultIndex || 0; i < event.results.length; i++) {
-      const result = event.results[i];
-      const rest = matchName(result[0].transcript, state.name);
-      if (rest === null) continue;
-      // Wait for the end of "Atlas, brief me"; the name alone starts a turn at once.
-      if (rest && !result.isFinal) return;
-      stopWake();
-      if (cluster) cluster.pulse(1.2);
-      if (rest) sendText(rest, { source: 'voice' });
-      else startListening();
-      return;
+      const transcript = event.results[i][0].transcript;
+      if (start < 0 || i === start) {
+        const rest = matchName(transcript, state.name);
+        if (rest === null) continue;
+        if (start < 0) {
+          start = i;
+          if (cluster) cluster.pulse(1.2);
+          showHeardName();
+        }
+        parts[i] = rest;
+      } else if (i > start) {
+        parts[i] = transcript;
+      }
     }
+    if (start < 0) return;
+    setCaption(request());
+    clearTimeout(pauseTimer);
+    pauseTimer = setTimeout(finish, END_PAUSE_MS);
   };
   rec.onerror = (event) => {
     if (event && (event.error === 'not-allowed' || event.error === 'service-not-allowed')) {
@@ -560,6 +613,12 @@ function startWake() {
   rec.onend = () => {
     if (state.wakeRec !== rec) return;
     state.wakeRec = null;
+    if (start >= 0) {
+      // The engine ended mid-request: act on what was heard.
+      clearTimeout(pauseTimer);
+      finish();
+      return;
+    }
     scheduleWake(); // engines stop after a while; keep listening while the app is open
   };
   try {
@@ -567,6 +626,16 @@ function startWake() {
   } catch {
     state.wakeRec = null;
   }
+}
+
+// The name was heard: look like listening without stopping the session that is
+// still hearing the rest of the request.
+function showHeardName() {
+  const orb = $('orb');
+  orb.dataset.state = 'listening';
+  orb.setAttribute('aria-label', ORB_ARIA.listening);
+  $('orb-label').textContent = ORB_LABELS.listening;
+  if (cluster) cluster.setState('listening');
 }
 
 function syncWakeToggle() {
@@ -577,6 +646,15 @@ function syncWakeToggle() {
   $('wake-ios').hidden = !isIos();
   $('wake-unsupported').hidden = isIos() || wakeSupported();
   setOrb(state.orb);
+}
+
+function syncKeepToggle() {
+  $('keep-toggle').checked = keepListeningOn();
+}
+
+function onKeepToggle(event) {
+  store(STORAGE.keepListening, event.target.checked ? null : '0');
+  syncKeepToggle();
 }
 
 function onWakeToggle(event) {
@@ -630,14 +708,25 @@ async function startRecording() {
   recorder.ondataavailable = (event) => {
     if (event.data && event.data.size) chunks.push(event.data);
   };
+  state.heardSpeech = false;
   const stopOnSilence = watchSilence(stream, () => {
     if (recorder.state !== 'inactive') recorder.stop();
   });
+  const canHear = Boolean(state.micWatching);
   recorder.onstop = async () => {
     clearTimeout(state.recordTimer);
+    clearTimeout(state.followUpTimer);
     stopOnSilence();
     state.recorder = null;
     stream.getTracks().forEach((t) => t.stop());
+    if (state.discardRecording) {
+      // Nobody spoke after the reply: end the conversation without uploading silence.
+      state.discardRecording = false;
+      state.followUp = false;
+      setOrb('idle');
+      setCaption('');
+      return;
+    }
     const type = recorder.mimeType || mimeType || 'audio/webm';
     const blob = new Blob(chunks, { type });
     if (!blob.size) {
@@ -670,10 +759,20 @@ async function startRecording() {
   };
   recorder.start();
   setOrb('listening');
-  setCaption('Listening… tap the orb when you finish.');
+  setCaption(state.followUp ? '' : 'Listening… tap the orb when you finish.');
   state.recordTimer = setTimeout(() => {
     if (recorder.state !== 'inactive') recorder.stop();
   }, RECORD_LIMIT_MS);
+  // After a reply, give up quietly if nothing is said. Needs the level meter to know.
+  if (state.followUp && canHear) {
+    clearTimeout(state.followUpTimer);
+    state.followUpTimer = setTimeout(() => {
+      if (!state.heardSpeech && recorder.state !== 'inactive') {
+        state.discardRecording = true;
+        recorder.stop();
+      }
+    }, FOLLOW_UP_MS);
+  }
 }
 
 // Calls onSilence once the speaker has talked and then gone quiet. Returns a cleanup function.
@@ -709,6 +808,7 @@ function watchSilence(stream, onSilence) {
     const now = Date.now();
     if (level > SILENCE_LEVEL) {
       heard = true;
+      state.heardSpeech = true;
       quietSince = 0;
     } else if (heard) {
       if (!quietSince) quietSince = now;
@@ -716,8 +816,10 @@ function watchSilence(stream, onSilence) {
     }
   }, 100);
   if (cluster) cluster.setLevelSource(() => Math.min(1, state.micLevel * 8));
+  state.micWatching = true;
   return () => {
     clearInterval(timer);
+    state.micWatching = false;
     state.micLevel = 0;
     if (cluster) cluster.setLevelSource(null);
     ctx.close().catch(() => {});
@@ -818,6 +920,7 @@ async function sendText(text, opts = {}) {
   if (!text) return true;
   if (!requireAuth()) return true;
   stopSpeaking();
+  state.followUp = false;
   addTurn('user', text);
   if (cluster) cluster.pulse(0.6);
   setOrb('thinking');
@@ -835,7 +938,26 @@ async function sendText(text, opts = {}) {
   if (!speakReply || !data || !data.reply) return true;
   const ok = await speak(data.reply);
   if (!ok && opts.source === 'voice') toast('Could not play audio. The reply is shown below.');
+  if (ok && opts.source === 'voice' && keepListeningOn() && !END_CONVERSATION.test(text)) {
+    listenForFollowUp();
+  }
   return ok;
+}
+
+// A spoken exchange carries on without the name: once the reply has been read out,
+// listen again. Silence, "thanks" or a tap ends it and Atlas waits for its name again.
+function keepListeningOn() {
+  return load(STORAGE.keepListening) !== '0';
+}
+
+function listenForFollowUp() {
+  if (document.visibilityState === 'hidden' || state.orb !== 'idle' || !getToken()) return;
+  state.followUp = true;
+  setTimeout(() => {
+    // The reply may have been interrupted, or something else started meanwhile.
+    if (!state.followUp || state.orb !== 'idle') return;
+    startListening();
+  }, 250);
 }
 
 // ---------------------------------------------------------------- brief
@@ -1778,6 +1900,7 @@ function bindUi() {
     else if (state.orb === 'idle') scheduleWake();
   });
   $('wake-toggle').addEventListener('change', onWakeToggle);
+  $('keep-toggle').addEventListener('change', onKeepToggle);
   document.querySelectorAll('.tab[data-tab]').forEach((b) => b.addEventListener('click', () => showView(b.dataset.tab, { push: true })));
   document.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => {
     if ($('settings').open) $('settings').close();
@@ -1813,6 +1936,7 @@ function init() {
   showView(viewFromHash());
   state.name = load(STORAGE.name) || 'Atlas';
   syncWakeToggle();
+  syncKeepToggle();
   loadName();
   syncKindButtons();
   setOrb('idle');

@@ -21,6 +21,8 @@ That runs a whole Friday (morning brief, "go ahead with all", delegations, a rep
 
 The first run finds Python (or offers to install it with one keypress), sets everything up, shows your sign-in secret and opens the app in your browser. After that, double-clicking **Start Atlas.bat** just starts it. Keep its window open while you use Atlas.
 
+Prefer typing? Everything after the first start can be done from Command Prompt in the same folder with the `atlas` command: `atlas status`, `atlas connect claude sk-ant-...`, `atlas keys microsoft ...`, `atlas signin outlook`, `atlas team add ...`, `atlas say "brief me"`, `atlas phone`. Type `atlas` for the full list.
+
 ## Run it for real
 
 ```bash
