@@ -102,3 +102,39 @@ jobs:
       - name: Logs
         if: failure()
         run: docker logs assistant
+
+  # Atlas started the way a Windows user starts it: Start Atlas.bat runs scripts\start.ps1.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: First run (Windows PowerShell 5.1)
+        shell: powershell
+        run: .\scripts\start.ps1 -SetupOnly
+      - name: Start, answer and sign in
+        shell: powershell
+        run: |
+          $p = Start-Process -FilePath cmd.exe -ArgumentList '/c', '"Start Atlas.bat" -NoBrowser' -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 90; $i++) {
+            try { Invoke-WebRequest http://127.0.0.1:8000/health -UseBasicParsing -TimeoutSec 2 | Out-Null; $ok = $true; break } catch { Start-Sleep 1 }
+          }
+          if (-not $ok) { throw "Atlas did not start" }
+          $health = Invoke-RestMethod http://127.0.0.1:8000/health
+          if ($health.database -ne 'ok') { throw "database: $($health.database)" }
+          $secret = (Select-String -Path .env -Pattern '^API_AUTH_TOKEN=(.+)$').Matches[0].Groups[1].Value
+          $body = @{ secret = $secret; client_name = 'ci' } | ConvertTo-Json
+          $token = (Invoke-RestMethod -Method Post http://127.0.0.1:8000/auth/token -ContentType 'application/json' -Body $body).access_token
+          $apps = Invoke-RestMethod http://127.0.0.1:8000/connections -Headers @{ Authorization = "Bearer $token" }
+          if (-not $apps.ready) { throw "connections not ready" }
+          $page = Invoke-WebRequest http://127.0.0.1:8000/ -UseBasicParsing
+          if ($page.Content -notmatch 'Chief of Staff') { throw "app page missing" }
+          Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
+      - name: Backend tests on Windows
+        working-directory: backend
+        run: |
+          pip install -e ".[dev]"
+          pytest -q

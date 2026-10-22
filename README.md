@@ -14,6 +14,13 @@ backend/.venv/bin/python scripts/seed_demo_data.py
 
 That runs a whole Friday (morning brief, "go ahead with all", delegations, a reply from your team, the evening wrap-up) against in-memory accounts and a stand-in for Claude. Nothing leaves your machine.
 
+## Run it on Windows (no Linux needed)
+
+1. Download the code: on GitHub, **Code → Download ZIP**, then right-click the ZIP and choose **Extract All**.
+2. Open the extracted folder and double-click **Start Atlas.bat**.
+
+The first run finds Python (or offers to install it with one keypress), sets everything up, shows your sign-in secret and opens the app in your browser. After that, double-clicking **Start Atlas.bat** just starts it. Keep its window open while you use Atlas.
+
 ## Run it for real
 
 ```bash
