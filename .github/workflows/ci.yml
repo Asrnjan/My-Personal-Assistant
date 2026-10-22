@@ -149,6 +149,20 @@ jobs:
           Write-Host "Heard: $heard"
           if ((($heard | ConvertFrom-Json).text) -notmatch 'brief') { throw "/stt did not hear 'brief'" }
 
+          # The atlas command, the way a user types it in Command Prompt.
+          cmd /c "atlas status"
+          if ($LASTEXITCODE -ne 0) { throw "atlas status failed" }
+          cmd /c "atlas team clear"
+          cmd /c "atlas team add priya ""Priya Sharma"" priya@example.com ""finance, invoices"""
+          if ($LASTEXITCODE -ne 0) { throw "atlas team add failed" }
+          $team = cmd /c "atlas team"
+          if (($team -join "`n") -notmatch 'Priya Sharma') { throw "team list missing Priya: $team" }
+          $reply = cmd /c "atlas say ""brief me"""
+          if ($LASTEXITCODE -ne 0 -or -not $reply) { throw "atlas say failed" }
+          Write-Host "atlas say: $reply"
+          $bad = cmd /c "atlas connect claude not-a-key 2>&1"
+          if ($LASTEXITCODE -eq 0 -or ($bad -join "`n") -notmatch 'sk-ant-') { throw "atlas connect should refuse a bad key: $bad" }
+
           Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
       - name: Backend tests on Windows
         working-directory: backend
