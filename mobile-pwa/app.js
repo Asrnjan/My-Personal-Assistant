@@ -117,6 +117,7 @@ const state = {
   view: 'home',
   connections: null,
   micLevel: 0,
+  utterances: [],
   // Listening again right after a spoken reply, without the name.
   followUp: false,
   heardSpeech: false,
@@ -296,6 +297,27 @@ function stopSpeaking() {
   if (state.orb === 'speaking') setOrb('idle');
 }
 
+// Chrome stops long utterances after about 15 seconds without firing onend, and can drop
+// onend when the utterance object is garbage collected. So long replies are spoken a few
+// sentences at a time, every utterance is kept referenced, and a watchdog notices when the
+// engine has gone quiet even if no event says so.
+const SPEAK_CHUNK_CHARS = 180;
+
+function speechChunks(text) {
+  const sentences = text.match(/[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g) || [text];
+  const chunks = [];
+  let current = '';
+  for (const sentence of sentences) {
+    if (current && (current + sentence).length > SPEAK_CHUNK_CHARS) {
+      chunks.push(current.trim());
+      current = '';
+    }
+    current += sentence;
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks.length ? chunks : [text];
+}
+
 function speakWithSynthesis(text, token) {
   return new Promise((resolve) => {
     const synth = window.speechSynthesis;
@@ -306,25 +328,40 @@ function speakWithSynthesis(text, token) {
     }
     let started = false;
     let settled = false;
+    let quietTicks = 0;
+    let watchdog = null;
     const finish = (ok) => {
       if (settled) return;
       settled = true;
       clearTimeout(startTimer);
+      clearInterval(watchdog);
+      state.utterances = [];
       resolve(ok);
     };
-    const utterance = new Utterance(text);
-    utterance.lang = document.documentElement.lang || 'en';
-    utterance.rate = 1.02;
-    utterance.onstart = () => {
-      started = true;
-      if (token === state.speakToken) setOrb('speaking');
-    };
-    utterance.onend = () => finish(true);
-    utterance.onerror = (event) => {
-      const err = event && event.error;
-      // "interrupted"/"canceled" mean we stopped it ourselves: that is not a failure.
-      finish(err === 'interrupted' || err === 'canceled');
-    };
+    const chunks = speechChunks(text);
+    state.utterances = chunks.map((chunk, index) => {
+      const utterance = new Utterance(chunk);
+      utterance.lang = document.documentElement.lang || 'en';
+      utterance.rate = 1.02;
+      utterance.onstart = () => {
+        if (!started) {
+          started = true;
+          // Only after speech has begun can "the engine is quiet" mean "finished".
+          watchdog = setInterval(() => {
+            quietTicks = synth.speaking || synth.pending ? 0 : quietTicks + 1;
+            if (quietTicks >= 3) finish(true);
+          }, 400);
+        }
+        if (token === state.speakToken) setOrb('speaking');
+      };
+      if (index === chunks.length - 1) utterance.onend = () => finish(true);
+      utterance.onerror = (event) => {
+        const err = event && event.error;
+        // "interrupted"/"canceled" mean we stopped it ourselves: that is not a failure.
+        finish(err === 'interrupted' || err === 'canceled');
+      };
+      return utterance;
+    });
     // Engines that silently refuse (no user gesture) never fire onstart.
     const startTimer = setTimeout(() => {
       if (!started) {
@@ -334,7 +371,7 @@ function speakWithSynthesis(text, token) {
     }, 4000);
     try {
       synth.cancel();
-      synth.speak(utterance);
+      for (const utterance of state.utterances) synth.speak(utterance);
     } catch {
       finish(false);
     }

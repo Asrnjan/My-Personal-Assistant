@@ -185,3 +185,32 @@ test('pushed WebSocket events show a toast and refresh the brief', async ({ page
   socket.socket.send(JSON.stringify({ type: 'event', kind: 'notice', payload: { text: 'Rahul acknowledged the vendor review.' } }));
   await expect(page.locator('.toast').last()).toContainText('Rahul acknowledged');
 });
+
+test('keeps listening after a reply even when the browser never says speech ended', async ({ page }) => {
+  const { calls } = await setup(page, { speech: { synthesis: 'no-end' } });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
+  await page.evaluate(() => window.__recognitions[0].__say('brief me'));
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { timeout: 6000 }).toBe(1);
+  await expect.poll(
+    () => page.evaluate(() => window.__recognitions.filter((r) => r.purpose === 'turn' && r.started && !r.ended).length),
+    { timeout: 6000 },
+  ).toBe(1);
+  await expect(page.locator('#orb-label')).toHaveText('Listening… say “thanks” when you’re done');
+});
+
+test('a long reply is spoken a few sentences at a time', async ({ page }) => {
+  const long = 'First thing today is the board deck, which needs your sign-off by noon. '
+    + 'Second, Rahul can take the vendor review because he handled the last one. '
+    + 'Third, the agency pitch clashes with the investor call, so I suggest declining it. '
+    + 'Shall I go ahead?';
+  await setup(page, { overrides: { 'POST /converse': () => ({ json: converseReply(long) }) } });
+  await page.goto('/');
+  await page.getByLabel('Type a message').fill('brief me');
+  await page.getByLabel('Type a message').press('Enter');
+  await expect.poll(() => page.evaluate(() => window.__spoken.length)).toBeGreaterThan(1);
+  const spoken = await page.evaluate(() => window.__spoken);
+  expect(spoken.join(' ')).toBe(long);
+  for (const chunk of spoken) expect(chunk.length).toBeLessThanOrEqual(180);
+});
