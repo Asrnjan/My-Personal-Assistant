@@ -214,3 +214,21 @@ test('a long reply is spoken a few sentences at a time', async ({ page }) => {
   expect(spoken.join(' ')).toBe(long);
   for (const chunk of spoken) expect(chunk.length).toBeLessThanOrEqual(180);
 });
+
+test('waiting for a reply survives the browser giving up early', async ({ page }) => {
+  const { calls } = await setup(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
+  await page.evaluate(() => window.__recognitions[0].__say('brief me'));
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { timeout: 6000 }).toBe(1);
+  const turns = () => page.evaluate(() => window.__recognitions.filter((r) => r.purpose === 'turn').length);
+  await expect.poll(turns).toBe(2);
+  // Chrome ends a quiet session by itself; Atlas starts listening again.
+  await page.evaluate(() => window.__recognitions.filter((r) => r.purpose === 'turn').pop().stop());
+  await expect.poll(turns).toBe(3);
+  await expect(page.locator('#orb')).toHaveAttribute('data-state', 'listening');
+  await page.evaluate(() => window.__recognitions.filter((r) => r.purpose === 'turn').pop().__say('what about tomorrow'));
+  await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { timeout: 6000 }).toBe(2);
+  expect(findCalls(calls, 'POST', '/converse')[1].body.text).toBe('what about tomorrow');
+});

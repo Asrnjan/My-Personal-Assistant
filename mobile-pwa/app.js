@@ -85,7 +85,7 @@ const MAX_TURNS = 6;
 const END_PAUSE_MS = 2500;
 // After a spoken reply, how long to wait for a follow-up before going back to waiting
 // for the name.
-const FOLLOW_UP_MS = 7000;
+const FOLLOW_UP_MS = 15000;
 // Saying one of these ends the back-and-forth instead of listening again.
 const END_CONVERSATION = /^\s*(thanks|thank you|thankyou|that'?s all|that is all|that'?s it|stop|bye|goodbye|good bye|never ?mind|no thanks|no thank you|i'?m done|all done)\b/i;
 const RECORD_LIMIT_MS = 30000;
@@ -524,6 +524,12 @@ function startRecognition(Ctor) {
     // Stopped by a tap or by the engine: send whatever was heard.
     if (!handled && heard()) {
       send();
+      return;
+    }
+    // Chrome gives up after several quiet seconds; while waiting for a reply, keep going
+    // until the follow-up window is over.
+    if (!handled && state.followUp && Date.now() < (state.followUpUntil || 0)) {
+      startRecognition(Ctor);
       return;
     }
     if (!handled && state.orb === 'listening') {
@@ -992,6 +998,7 @@ function keepListeningOn() {
 function listenForFollowUp() {
   if (document.visibilityState === 'hidden' || state.orb !== 'idle' || !getToken()) return;
   state.followUp = true;
+  state.followUpUntil = Date.now() + FOLLOW_UP_MS;
   setTimeout(() => {
     // The reply may have been interrupted, or something else started meanwhile.
     if (!state.followUp || state.orb !== 'idle') return;
