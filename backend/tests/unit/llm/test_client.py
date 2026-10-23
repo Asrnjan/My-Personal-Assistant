@@ -68,7 +68,7 @@ def test_conversation_uses_sonnet_with_refusal_fallback(
         tools=[{"name": "list_items", "input_schema": {"type": "object"}}],
     )
     assert params["model"] == "claude-sonnet-5-5"
-    assert params["output_config"] == {"effort": "medium"}
+    assert params["output_config"] == {"effort": "low"}
     assert params["extra_headers"] == {"anthropic-beta": FALLBACK_BETA}
     assert params["extra_body"] == {"fallbacks": "default"}
     assert params["tools"][0]["name"] == "list_items"

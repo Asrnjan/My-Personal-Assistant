@@ -13,6 +13,8 @@ const STORAGE = {
   name: 'cos.assistantName',
   wake: 'cos.listenForName',
   keepListening: 'cos.keepListening',
+  voice: 'cos.voice',
+  voiceSpeed: 'cos.voiceSpeed',
 };
 
 const BANDS = {
@@ -320,6 +322,102 @@ function speechChunks(text) {
   return chunks.length ? chunks : [text];
 }
 
+// Browsers ship several voices; the default one is often an old, robotic desktop voice.
+// Unless the user picked one, Atlas uses the most natural female voice for their language:
+// Edge's "Online (Natural)" voices first, then Google's network voices, then the rest.
+const DEFAULT_SPEED = 1.12;
+const FEMALE_VOICES = /\b(aria|jenny|ava|emma|michelle|sonia|libby|maisie|natasha|clara|neerja|ana|samantha|karen|moira|tessa|serena|victoria|zira|hazel|susan|heera|veena|fiona|allison|joanna|salli|kimberly|kendra|ivy|female|woman)\b/i;
+const MALE_VOICES = /\b(david|mark|guy|andrew|brian|christopher|eric|roger|steffan|ryan|thomas|william|prabhat|ravi|daniel|alex|fred|george|james|male|man)\b/i;
+
+function voiceScore(voice, lang) {
+  const name = voice.name || '';
+  const vlang = (voice.lang || '').replace('_', '-').toLowerCase();
+  let score = 0;
+  if (vlang === lang) score += 20;
+  if (vlang.split('-')[0] === lang.split('-')[0]) score += 100;
+  if (/natural|neural|online|premium|enhanced/i.test(name)) score += 60;
+  if (/^google/i.test(name)) score += 35;
+  if (FEMALE_VOICES.test(name)) score += 30;
+  if (MALE_VOICES.test(name)) score -= 40;
+  return score;
+}
+
+function availableVoices() {
+  try {
+    return (window.speechSynthesis && window.speechSynthesis.getVoices()) || [];
+  } catch {
+    return [];
+  }
+}
+
+function userLang() {
+  return (navigator.language || document.documentElement.lang || 'en').replace('_', '-').toLowerCase();
+}
+
+function bestVoice(voices) {
+  const lang = userLang();
+  let best = null;
+  let bestScore = -Infinity;
+  for (const voice of voices) {
+    const score = voiceScore(voice, lang);
+    if (score > bestScore) {
+      best = voice;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+function chosenVoice() {
+  const voices = availableVoices();
+  const saved = load(STORAGE.voice);
+  return (saved && voices.find((v) => v.voiceURI === saved || v.name === saved)) || bestVoice(voices);
+}
+
+function voiceSpeed() {
+  const speed = parseFloat(load(STORAGE.voiceSpeed));
+  return speed > 0.5 && speed < 2 ? speed : DEFAULT_SPEED;
+}
+
+function syncVoiceSettings() {
+  const select = $('voice-select');
+  if (!select) return;
+  const voices = availableVoices();
+  const saved = load(STORAGE.voice) || '';
+  const best = bestVoice(voices);
+  const lang = userLang();
+  const base = lang.split('-')[0];
+  const listed = voices
+    .filter((v) => (v.lang || '').toLowerCase().startsWith(base) || v.voiceURI === saved)
+    .sort((a, b) => voiceScore(b, lang) - voiceScore(a, lang));
+  select.replaceChildren();
+  const auto = document.createElement('option');
+  auto.value = '';
+  auto.textContent = best ? `Best available (${best.name})` : 'Best available';
+  select.append(auto);
+  for (const voice of listed) {
+    const option = document.createElement('option');
+    option.value = voice.voiceURI || voice.name;
+    option.textContent = voice.name;
+    select.append(option);
+  }
+  select.value = listed.some((v) => (v.voiceURI || v.name) === saved) ? saved : '';
+  const speed = $('voice-speed');
+  const wanted = String(voiceSpeed());
+  speed.value = [...speed.options].some((o) => o.value === wanted) ? wanted : String(DEFAULT_SPEED);
+}
+
+function onVoiceChange() {
+  store(STORAGE.voice, $('voice-select').value || null);
+  speak(`Hi, I'm ${state.name}. This is how I'll sound.`);
+}
+
+function onSpeedChange() {
+  const value = $('voice-speed').value;
+  store(STORAGE.voiceSpeed, value === String(DEFAULT_SPEED) ? null : value);
+  speak(`Hi, I'm ${state.name}. This is how fast I'll talk.`);
+}
+
 function speakWithSynthesis(text, token) {
   return new Promise((resolve) => {
     const synth = window.speechSynthesis;
@@ -341,10 +439,13 @@ function speakWithSynthesis(text, token) {
       resolve(ok);
     };
     const chunks = speechChunks(text);
+    const voice = chosenVoice();
+    const rate = voiceSpeed();
     state.utterances = chunks.map((chunk, index) => {
       const utterance = new Utterance(chunk);
-      utterance.lang = document.documentElement.lang || 'en';
-      utterance.rate = 1.02;
+      if (voice) utterance.voice = voice;
+      utterance.lang = (voice && voice.lang) || document.documentElement.lang || 'en';
+      utterance.rate = rate;
       utterance.onstart = () => {
         if (!started) {
           started = true;
@@ -1964,6 +2065,13 @@ function bindUi() {
   });
   $('wake-toggle').addEventListener('change', onWakeToggle);
   $('keep-toggle').addEventListener('change', onKeepToggle);
+  $('voice-select').addEventListener('change', onVoiceChange);
+  $('voice-speed').addEventListener('change', onSpeedChange);
+  $('voice-test').addEventListener('click', () => speak(`Hi, I'm ${state.name}. This is how I'll sound.`));
+  // Chrome and Edge load their voice list after the page, and announce it with this event.
+  if (window.speechSynthesis && typeof window.speechSynthesis.addEventListener === 'function') {
+    window.speechSynthesis.addEventListener('voiceschanged', syncVoiceSettings);
+  }
   document.querySelectorAll('.tab[data-tab]').forEach((b) => b.addEventListener('click', () => showView(b.dataset.tab, { push: true })));
   document.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => {
     if ($('settings').open) $('settings').close();
@@ -2000,6 +2108,7 @@ function init() {
   state.name = load(STORAGE.name) || 'Atlas';
   syncWakeToggle();
   syncKeepToggle();
+  syncVoiceSettings();
   loadName();
   syncKindButtons();
   setOrb('idle');

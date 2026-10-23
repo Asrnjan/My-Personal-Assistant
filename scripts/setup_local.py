@@ -6,7 +6,9 @@
 Copies each ``config/*.example.yaml`` you don't have yet, creates ``.env`` from
 ``.env.example`` with a new ``API_AUTH_TOKEN`` and ``FERNET_KEY``, and fills in a Web Push
 key pair (``VAPID_*``) when ``.env`` has none, so phone notifications work without a manual
-step. Nothing that already has a value is changed. Uses only the standard library plus
+step. Nothing that already has a value is changed, except that an old ``config.yaml``
+still carrying the earlier shipped default ``conversation_effort: medium`` is moved to the
+faster ``low``. Uses only the standard library plus
 ``cryptography`` (installed with the backend).
 """
 
@@ -50,6 +52,23 @@ def ensure_vapid(env: Path) -> bool:
     return True
 
 
+# The first versions shipped "medium", which made spoken replies noticeably slow.
+_OLD_EFFORT = re.compile(r"^([ \t]*conversation_effort:[ \t]*)medium(?=[ \t\r]*$)", flags=re.M)
+
+
+def speed_up_config(config: Path) -> bool:
+    """Move the old default conversation effort to "low". Returns True when changed."""
+    if not config.exists():
+        return False
+    data = config.read_bytes().decode("utf-8")
+    if not _OLD_EFFORT.search(data):
+        return False
+    # Bytes in and out, so the file keeps its own line endings.
+    config.write_bytes(_OLD_EFFORT.sub(r"\g<1>low", data, count=1).encode("utf-8"))
+    print("Switched config/config.yaml to quicker replies (conversation_effort: low).")
+    return True
+
+
 def setup() -> bool:
     """Returns True when .env was created on this run."""
     for name in CONFIGS:
@@ -57,6 +76,7 @@ def setup() -> bool:
         if not target.exists():
             shutil.copyfile(ROOT / "config" / f"{name}.example.yaml", target)
             print(f"Created config/{name}.yaml from the example.")
+    speed_up_config(ROOT / "config" / "config.yaml")
 
     env = ROOT / ".env"
     if env.exists():

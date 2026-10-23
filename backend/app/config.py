@@ -71,7 +71,8 @@ class ModelsConfig(_Strict):
     bulk: str = "claude-haiku-5-5"
     conversation: str = "claude-sonnet-5-5"
     bulk_effort: Effort = "low"
-    conversation_effort: Effort = "medium"
+    # "low" keeps spoken replies quick; raise it for more careful (slower) answers.
+    conversation_effort: Effort = "low"
     max_retries: int = Field(default=3, ge=0, le=10)
     # Re-run a refused conversation request on a fallback model (server-side, Claude API).
     refusal_fallback: bool = True
