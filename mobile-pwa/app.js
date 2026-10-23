@@ -522,7 +522,8 @@ async function speak(text) {
   return ok;
 }
 
-// iPhones only let a page speak once speech has been started inside a tap. The reply comes
+// iPhones only let a page speak once speech has been started inside a tap (when the finger
+// lifts, not when it lands). The reply comes
 // seconds after the tap that asked for it, so the first tap also speaks a silent utterance,
 // which unlocks speech for the rest of the visit.
 let speechUnlocked = false;
@@ -2033,7 +2034,8 @@ function registerServiceWorker() {
 
 function bindUi() {
   $('orb').addEventListener('click', onOrbClick);
-  for (const type of ['pointerdown', 'touchend', 'keydown']) {
+  // Only these count as a tap for Safari; pointerdown and touchstart are too early.
+  for (const type of ['touchend', 'click', 'keydown']) {
     document.addEventListener(type, unlockSpeech, { capture: true, passive: true });
   }
   // Touching the sphere sends ripples out from the exact point touched.
