@@ -7,8 +7,8 @@ Copies each ``config/*.example.yaml`` you don't have yet, creates ``.env`` from
 ``.env.example`` with a new ``API_AUTH_TOKEN`` and ``FERNET_KEY``, and fills in a Web Push
 key pair (``VAPID_*``) when ``.env`` has none, so phone notifications work without a manual
 step. Nothing that already has a value is changed, except that an old ``config.yaml``
-still carrying the earlier shipped default ``conversation_effort: medium`` is moved to the
-faster ``low``. Uses only the standard library plus
+still carrying an earlier, slower shipped default (``conversation_effort: medium``, speech
+``model_size: small``) is moved to the quicker one. Uses only the standard library plus
 ``cryptography`` (installed with the backend).
 """
 
@@ -52,21 +52,38 @@ def ensure_vapid(env: Path) -> bool:
     return True
 
 
-# The first versions shipped "medium", which made spoken replies noticeably slow.
-_OLD_EFFORT = re.compile(r"^([ \t]*conversation_effort:[ \t]*)medium(?=[ \t\r]*$)", flags=re.M)
+# Earlier versions shipped slower defaults: conversation effort "medium" made replies slow,
+# and the "small" speech model made transcribing slow. Lines still on those exact shipped
+# values are moved to the quicker ones; anything the user chose is left alone.
+_SPEED_UPS = (
+    (
+        re.compile(r"^([ \t]*conversation_effort:[ \t]*)medium(?=[ \t\r]*$)", flags=re.M),
+        "low",
+        "quicker replies (conversation_effort: low)",
+    ),
+    (
+        re.compile(r"^([ \t]*model_size:[ \t]*)small(?=[ \t\r]*$)", flags=re.M),
+        "base.en",
+        "quicker speech recognition (stt model_size: base.en)",
+    ),
+)
 
 
 def speed_up_config(config: Path) -> bool:
-    """Move the old default conversation effort to "low". Returns True when changed."""
+    """Move old shipped defaults to the quicker ones. Returns True when changed."""
     if not config.exists():
         return False
-    data = config.read_bytes().decode("utf-8")
-    if not _OLD_EFFORT.search(data):
-        return False
     # Bytes in and out, so the file keeps its own line endings.
-    config.write_bytes(_OLD_EFFORT.sub(r"\g<1>low", data, count=1).encode("utf-8"))
-    print("Switched config/config.yaml to quicker replies (conversation_effort: low).")
-    return True
+    data = config.read_bytes().decode("utf-8")
+    changed = False
+    for pattern, value, what in _SPEED_UPS:
+        if pattern.search(data):
+            data = pattern.sub(rf"\g<1>{value}", data, count=1)
+            print(f"Switched config/config.yaml to {what}.")
+            changed = True
+    if changed:
+        config.write_bytes(data.encode("utf-8"))
+    return changed
 
 
 def setup() -> bool:

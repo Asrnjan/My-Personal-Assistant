@@ -148,7 +148,7 @@ mkdir -p ../voices
 .venv/bin/python -m piper.download_voices --download-dir ../voices en_US-lessac-medium
 ```
 
-`PIPER_VOICES_DIR` points at that folder (default `voices/` in the repository). Pick another voice from https://huggingface.co/rhasspy/piper-voices and set `tts.voice` in `config/config.yaml`. For Kokoro instead, `pip install -e ".[kokoro]"` and set `tts.engine: kokoro`, `tts.voice: af_heart`. The Whisper model (`stt.model_size`, default `small`) downloads on first use.
+`PIPER_VOICES_DIR` points at that folder (default `voices/` in the repository). Pick another voice from https://huggingface.co/rhasspy/piper-voices and set `tts.voice` in `config/config.yaml`. For Kokoro instead, `pip install -e ".[kokoro]"` and set `tts.engine: kokoro`, `tts.voice: af_heart`. The Whisper model (`stt.model_size`, default `base.en`; use `small` for languages other than English) downloads on first use.
 
 ## 12. The phone app (Android and iOS)
 

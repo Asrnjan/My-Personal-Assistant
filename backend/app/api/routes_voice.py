@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile, status
@@ -12,6 +14,7 @@ from app.api.auth import AuthenticatedClient
 from app.engine.conversation import spoken_reply
 from app.voice import SpeechToText, TextToSpeech, VoiceUnavailableError
 
+log = logging.getLogger(__name__)
 router = APIRouter(tags=["voice"])
 
 # 10 MB is several minutes of compressed speech.
@@ -31,10 +34,12 @@ async def speech_to_text(
     if len(data) > MAX_AUDIO_BYTES:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "audio is too long")
     stt: SpeechToText = request.app.state.stt
+    started = time.perf_counter()
     try:
         text = await run_in_threadpool(stt.transcribe, data)
     except VoiceUnavailableError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    log.info("transcribed %d KB in %.1f s", len(data) // 1024, time.perf_counter() - started)
     return Transcript(text=text)
 
 

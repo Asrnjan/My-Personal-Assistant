@@ -149,17 +149,18 @@ if ($lines.Count -gt 1) { $lines[0..($lines.Count - 2)] | ForEach-Object { Say $
 $secret = $lines[-1]
 
 # ---------------------------------------------------------------- speech model (once)
-# Downloaded ahead of time so the first voice message from an iPhone isn't slow. A failure
-# here isn't fatal: the model is fetched again the first time someone speaks.
+# Downloaded ahead of time so the first voice message from an iPhone isn't slow, and again
+# when config.yaml names another model. The marker file holds the model that is ready, so
+# this is instant on later starts. A failure isn't fatal: the model downloads on first use.
 $speechMarker = Join-Path $venv "atlas-speech-ready.txt"
-if (-not (Test-Path $speechMarker)) {
-    Say "Downloading the speech model so Atlas can understand your voice (one time, about 500 MB)..." "Cyan"
-    $model = @(& $venvPython (Join-Path (Join-Path $Root "scripts") "warm_speech.py"))
-    if ($LASTEXITCODE -eq 0) {
-        Set-Content -Path $speechMarker -Value $model[-1] -Encoding ASCII
-    } else {
-        Say "Couldn't download the speech model right now. It will download the first time you speak to Atlas from a phone." "Yellow"
-    }
+$speechReady = ""
+if (Test-Path $speechMarker) { $speechReady = (Get-Content $speechMarker -Raw).Trim() }
+if (-not $speechReady) {
+    Say "Downloading the speech model so Atlas can understand your voice (one time)..." "Cyan"
+}
+$model = @(& $venvPython (Join-Path (Join-Path $Root "scripts") "warm_speech.py") --marker $speechMarker)
+if ($LASTEXITCODE -ne 0) {
+    Say "Couldn't download the speech model right now. It will download the first time you speak to Atlas from a phone." "Yellow"
 }
 
 # ---------------------------------------------------------------- database

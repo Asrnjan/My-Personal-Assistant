@@ -706,10 +706,12 @@ function matchName(text, name) {
   return null;
 }
 
-// Listening for the name works where the browser recognises speech continuously
-// (Chrome on Android and computers). iPhone uses "Hey Siri, <name>" instead.
+// Listening for the name works where the browser recognises speech continuously (Chrome
+// on Android and computers) and, on iPhone, by recording short clips for the server to
+// transcribe. Either way only while the app is open on screen.
 function wakeSupported() {
-  return !isIos() && Boolean(getRecognitionCtor());
+  if (isIos()) return Boolean(window.MediaRecorder && navigator.mediaDevices);
+  return Boolean(getRecognitionCtor());
 }
 
 function wakeOn() {
@@ -734,6 +736,10 @@ function stopWake() {
 
 function startWake() {
   if (!wakeOn() || state.wakeRec || state.orb !== 'idle' || document.visibilityState === 'hidden') return;
+  if (isIos()) {
+    startWakeClips();
+    return;
+  }
   const rec = new (getRecognitionCtor())();
   state.wakeRec = rec;
   rec.lang = navigator.language || 'en-US';
@@ -801,6 +807,88 @@ function startWake() {
   } catch {
     state.wakeRec = null;
   }
+}
+
+// iPhone has no continuous speech recognition, so the microphone stays open while the app
+// is on screen and every phrase (speech, then a short pause) is sent to the server. A phrase
+// that starts with the name is acted on; anything else is dropped. Silence is never sent.
+const WAKE_CLIP_MS = 10000;
+const WAKE_PAUSE_MS = 900;
+
+async function startWakeClips() {
+  const wake = { stopped: false, stream: null, recorder: null };
+  wake.abort = () => {
+    wake.stopped = true;
+    if (wake.recorder && wake.recorder.state !== 'inactive') wake.recorder.stop();
+    if (wake.stream) wake.stream.getTracks().forEach((t) => t.stop());
+  };
+  state.wakeRec = wake;
+  try {
+    wake.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    if (state.wakeRec === wake) state.wakeRec = null;
+    store(STORAGE.wake, null);
+    syncWakeToggle();
+    toast(`Microphone access was blocked, so I can't listen for “${state.name}”.`, { variant: 'error' });
+    return;
+  }
+  if (wake.stopped) {
+    wake.abort();
+    return;
+  }
+  const mimeType = pickRecorderMime();
+  const clip = () => {
+    if (wake.stopped) return;
+    const recorder = mimeType ? new MediaRecorder(wake.stream, { mimeType }) : new MediaRecorder(wake.stream);
+    wake.recorder = recorder;
+    const chunks = [];
+    let spoke = false;
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size) chunks.push(event.data);
+    };
+    const stopWatching = watchSilence(wake.stream, () => {
+      if (recorder.state !== 'inactive') recorder.stop();
+    }, { pauseMs: WAKE_PAUSE_MS, onSpeech: () => { spoke = true; } });
+    // Short clips, so a phrase is never far from the start of one and silence is cheap.
+    const limit = setTimeout(() => {
+      if (recorder.state !== 'inactive') recorder.stop();
+    }, WAKE_CLIP_MS);
+    recorder.onstop = async () => {
+      clearTimeout(limit);
+      stopWatching();
+      if (wake.stopped) return;
+      if (!spoke) {
+        clip();
+        return;
+      }
+      const type = recorder.mimeType || mimeType || 'audio/webm';
+      let text = '';
+      try {
+        const form = new FormData();
+        form.append('audio', new Blob(chunks, { type }), `speech.${type.includes('mp4') ? 'm4a' : 'webm'}`);
+        const data = await api('/stt', { method: 'POST', form });
+        text = (data && data.text) || '';
+      } catch {
+        // The server is unreachable or can't transcribe: keep listening.
+      }
+      if (wake.stopped) return;
+      const rest = matchName(text, state.name);
+      if (rest === null) {
+        clip();
+        return;
+      }
+      if (cluster) cluster.pulse(1.2);
+      stopWake();
+      if (rest) {
+        setCaption(rest);
+        sendText(rest, { source: 'voice' });
+      } else {
+        startListening(); // just the name: listen for the request
+      }
+    };
+    recorder.start();
+  };
+  clip();
 }
 
 // Show at once that a finished phrase was heard, so the short wait before sending doesn't
@@ -961,7 +1049,7 @@ async function startRecording() {
 }
 
 // Calls onSilence once the speaker has talked and then gone quiet. Returns a cleanup function.
-function watchSilence(stream, onSilence) {
+function watchSilence(stream, onSilence, { pauseMs = SILENCE_STOP_MS, onSpeech = null } = {}) {
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!Ctx) return () => {};
   let ctx;
@@ -992,12 +1080,13 @@ function watchSilence(stream, onSilence) {
     state.micLevel = level;
     const now = Date.now();
     if (level > SILENCE_LEVEL) {
+      if (!heard && onSpeech) onSpeech();
       heard = true;
       state.heardSpeech = true;
       quietSince = 0;
     } else if (heard) {
       if (!quietSince) quietSince = now;
-      else if (now - quietSince >= SILENCE_STOP_MS) onSilence();
+      else if (now - quietSince >= pauseMs) onSilence();
     }
   }, 100);
   if (cluster) cluster.setLevelSource(() => Math.min(1, state.micLevel * 8));

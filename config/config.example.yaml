@@ -44,7 +44,7 @@ wake_word:
 
 stt:
   engine: faster-whisper
-  model_size: small
+  model_size: base.en # quick; small.en is more accurate but slower, small for other languages
   compute_type: int8
   language: null # auto-detect
 
