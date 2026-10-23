@@ -522,8 +522,29 @@ async function speak(text) {
   return ok;
 }
 
-function showTapToHear(text) {
+// iPhones only let a page speak once speech has been started inside a tap. The reply comes
+// seconds after the tap that asked for it, so the first tap also speaks a silent utterance,
+// which unlocks speech for the rest of the visit.
+let speechUnlocked = false;
+
+function unlockSpeech() {
+  if (speechUnlocked) return;
+  speechUnlocked = true;
+  try {
+    const synth = window.speechSynthesis;
+    const Utterance = window.SpeechSynthesisUtterance;
+    if (!synth || !Utterance) return;
+    const silent = new Utterance(' ');
+    silent.volume = 0;
+    synth.speak(silent);
+  } catch {
+    // Nothing to unlock on this browser.
+  }
+}
+
+function showTapToHear(text, label = 'Tap to hear your brief') {
   const overlay = $('tap-to-hear');
+  overlay.querySelector('.tap-text').textContent = label;
   overlay.hidden = false;
   const btn = $('tap-to-hear-btn');
   btn.onclick = async () => {
@@ -1100,7 +1121,8 @@ async function sendText(text, opts = {}) {
   setOrb('idle');
   if (!speakReply || !data || !data.reply) return true;
   const ok = await speak(data.reply);
-  if (!ok && opts.source === 'voice') toast('Could not play audio. The reply is shown below.');
+  // A tap is enough to play it, even where the browser blocked speaking on its own.
+  if (!ok && opts.source === 'voice') showTapToHear(data.reply, 'Tap to hear the answer');
   if (ok && opts.source === 'voice' && keepListeningOn() && !END_CONVERSATION.test(text)) {
     listenForFollowUp();
   }
@@ -2011,6 +2033,9 @@ function registerServiceWorker() {
 
 function bindUi() {
   $('orb').addEventListener('click', onOrbClick);
+  for (const type of ['pointerdown', 'touchend', 'keydown']) {
+    document.addEventListener(type, unlockSpeech, { capture: true, passive: true });
+  }
   // Touching the sphere sends ripples out from the exact point touched.
   $('orb').addEventListener('pointerdown', (event) => {
     if (cluster) cluster.touch(event.clientX, event.clientY);

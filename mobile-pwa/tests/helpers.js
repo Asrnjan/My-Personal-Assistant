@@ -323,6 +323,11 @@ async function stubSpeech(page, options = {}) {
         return (o.voices || []).map((v) => ({ voiceURI: v.name, localService: true, ...v }));
       },
       speak(utterance) {
+        // The silent utterance that unlocks speech on iPhone isn't something Atlas said.
+        if (!utterance.text.trim()) {
+          window.__silentUtterances = (window.__silentUtterances || 0) + 1;
+          return;
+        }
         if (!window.__allowSpeech) {
           setTimeout(() => utterance.onerror && utterance.onerror({ error: 'not-allowed' }), 0);
           return;
