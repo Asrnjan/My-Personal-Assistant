@@ -252,6 +252,7 @@ async function withToken(page, token = TOKEN) {
  * options.synthesis: 'ok' (default) or 'blocked' (speak fails until window.__allowSpeech = true).
  * options.mediaRecorder: true to install a fake getUserMedia + MediaRecorder.
  * options.voices: the voices getVoices() returns, as [{ name, lang }].
+ * options.audioLevels: true to fake the microphone level meter; set window.__micLevel.
  */
 async function stubSpeech(page, options = {}) {
   const opts = { recognition: true, synthesis: 'ok', mediaRecorder: false, ...options };
@@ -375,6 +376,20 @@ async function stubSpeech(page, options = {}) {
         }
       }
       window.MediaRecorder = FakeMediaRecorder;
+    }
+
+    if (o.audioLevels) {
+      window.__micLevel = 0;
+      class FakeAudioContext {
+        resume() { return Promise.resolve(); }
+        close() { return Promise.resolve(); }
+        createMediaStreamSource() { return { connect() {} }; }
+        createAnalyser() {
+          return { fftSize: 1024, getFloatTimeDomainData(samples) { samples.fill(window.__micLevel); } };
+        }
+      }
+      window.AudioContext = FakeAudioContext;
+      window.webkitAudioContext = FakeAudioContext;
     }
   }, opts);
 }

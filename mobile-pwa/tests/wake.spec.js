@@ -90,16 +90,50 @@ test('a blocked microphone turns listening off and says why', async ({ page }) =
 test.describe('on iPhone', () => {
   test.use({ userAgent: IPHONE_UA });
 
-  test('points to the Siri shortcut, and /?autostart=listen starts recording', async ({ page }) => {
+  test('points to the Siri shortcut for a locked phone, and /?autostart=listen starts recording', async ({ page }) => {
     await setup(page, { overrides: health('Atlas'), speech: { mediaRecorder: true } });
     await page.goto('/');
     await page.getByRole('button', { name: 'Open settings' }).click();
     const dialog = page.getByRole('dialog', { name: 'Settings' });
-    await expect(dialog.getByRole('switch', { name: /Listen for/ })).toBeDisabled();
+    await expect(dialog.getByRole('switch', { name: /Listen for/ })).toBeEnabled();
     await expect(dialog.locator('#wake-ios')).toContainText('Hey Siri, Atlas');
 
     await page.goto('/?autostart=listen');
     await expect(page.locator('#orb')).toHaveAttribute('data-state', 'listening');
     expect(new URL(page.url()).search).toBe('');
+  });
+
+  test('while the app is open, a phrase starting with the name is sent; others are dropped', async ({ page }) => {
+    const heard = ['what time is it', 'Atlas, brief me'];
+    const { calls } = await setup(page, {
+      overrides: {
+        ...health('Atlas'),
+        'POST /stt': () => ({ json: { text: heard.shift() || '' } }),
+        'POST /converse': () => ({ json: converseReply('Here is your day.') }),
+      },
+      speech: { mediaRecorder: true, audioLevels: true },
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open settings' }).click();
+    await page.getByRole('switch', { name: /Listen for/ }).check();
+    await page.keyboard.press('Escape');
+
+    // Silence is never uploaded.
+    await page.waitForTimeout(1500);
+    expect(findCalls(calls, 'POST', '/stt')).toHaveLength(0);
+
+    const speakPhrase = async () => {
+      await page.evaluate(() => { window.__micLevel = 0.2; });
+      await page.waitForTimeout(300);
+      await page.evaluate(() => { window.__micLevel = 0; });
+    };
+    await speakPhrase(); // "what time is it": not for Atlas
+    await expect.poll(() => findCalls(calls, 'POST', '/stt').length).toBe(1);
+    await page.waitForTimeout(300);
+    expect(findCalls(calls, 'POST', '/converse')).toHaveLength(0);
+
+    await speakPhrase(); // "Atlas, brief me"
+    await expect.poll(() => findCalls(calls, 'POST', '/converse').length).toBe(1);
+    expect(findCalls(calls, 'POST', '/converse')[0].body.text).toBe('brief me');
   });
 });

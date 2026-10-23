@@ -89,7 +89,9 @@ class WakeWordConfig(_Strict):
 
 class SttConfig(_Strict):
     engine: str = "faster-whisper"
-    model_size: str = "small"
+    # English-only "base" transcribes a short request in about a second on a laptop CPU;
+    # "small" or "small.en" are more accurate but several times slower.
+    model_size: str = "base.en"
     compute_type: str = "int8"
     language: str | None = None
 
