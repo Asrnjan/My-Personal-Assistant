@@ -162,6 +162,34 @@ def _strip_confirm(readback: str) -> str:
     return re.sub(r"\s*Confirm\?\s*$", "", readback).rstrip(".")
 
 
+_WORD = re.compile(r"[a-z0-9']{4,}")
+
+
+def _words(text: str) -> set[str]:
+    return set(_WORD.findall(text.lower()))
+
+
+def _with_readbacks(reply: str, readbacks: list[str]) -> str:
+    """Speak each new action's read-back once, in full, whatever the model said.
+
+    The model is asked to say the read-back word for word, but it often rewords it or reads
+    the email out itself, and adding the read-back after that read the message twice. When
+    the model's text already covers most of a read-back, the read-back replaces it.
+    """
+    spoken = [re.sub(r"\s+", " ", r).strip() for r in readbacks]
+    # A message without a full stop would run straight into "Confirm?" when spoken.
+    spoken = [re.sub(r"([^.!?])\s+Confirm\?$", r"\1. Confirm?", r) for r in spoken]
+    missing = [r for r in spoken if _strip_confirm(r) not in reply]
+    if not missing:
+        return reply
+    said = _words(reply)
+    for r in missing:
+        wanted = _words(_strip_confirm(r))
+        if wanted and len(wanted & said) >= len(wanted) / 2:
+            return " ".join(spoken)
+    return " ".join([reply, *missing]).strip()
+
+
 # --- responses ------------------------------------------------------------------------
 
 
@@ -780,10 +808,7 @@ class ConversationAgent:
         reply = spoken_reply(" ".join(texts))
         if turn.questions and not reply:
             reply = turn.questions[0]
-        # A proposed action is always read back in full, whatever the model said.
-        for action in self._actions.pending(turn.created):
-            if _strip_confirm(action.readback) not in reply:
-                reply = f"{reply} {action.readback}".strip()
+        reply = _with_readbacks(reply, [a.readback for a in self._actions.pending(turn.created)])
         if not reply and turn.executed:
             reply = " ".join(r.message for r in turn.executed)
         return reply or "Okay."

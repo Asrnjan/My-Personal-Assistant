@@ -265,3 +265,32 @@ def test_reply_and_cancel_paths(harness: Harness) -> None:
     harness.converse("reply sure")
     assert harness.converse("cancel")["reply"] == "Okay, I won't do that."
     assert harness.mail.sent == []
+
+
+def test_an_email_the_model_already_read_out_is_not_read_twice(harness: Harness) -> None:
+    body = "Hi Meera,\n\nCould you send me the Q3 budget by Friday?\n\nThanks"
+    harness.sender.queue(
+        tool_call("send_email", to="Meera", subject="Q3 budget", text=body),
+        say(
+            "Here's the email to Meera: Hi Meera, could you send me the Q3 budget by "
+            "Friday? Thanks. Shall I send it?"
+        ),
+    )
+    reply = harness.converse("Email Meera for the Q3 budget by Friday")["reply"]
+    assert reply == (
+        "Emailing Meera Shah about Q3 budget, saying: Hi Meera, Could you send me the Q3 "
+        "budget by Friday? Thanks. Confirm?"
+    )
+    assert reply.count("Friday") == 1
+
+
+def test_the_read_back_is_added_when_the_model_skipped_it(harness: Harness) -> None:
+    harness.sender.queue(
+        tool_call("send_email", to="Meera", subject="Budget", text="Please send the budget."),
+        say("Done, I've drafted that for you."),
+    )
+    reply = harness.converse("Email Meera asking for the budget")["reply"]
+    assert reply == (
+        "Done, I've drafted that for you. "
+        "Emailing Meera Shah about Budget, saying: Please send the budget. Confirm?"
+    )
