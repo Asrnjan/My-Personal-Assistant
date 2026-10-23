@@ -71,21 +71,42 @@ class WhisperSTT:
         self._model: Any = None
         self._lock = threading.Lock()
 
-    def _load(self) -> Any:
+    def _load(self, *, local_only: bool = False) -> Any:
         with self._lock:
             if self._model is None:
                 module = _import("faster_whisper", "voice")
-                self._model = module.WhisperModel(
-                    self._config.model_size, device="cpu", compute_type=self._config.compute_type
-                )
+                kwargs: dict[str, Any] = {
+                    "device": "cpu",
+                    "compute_type": self._config.compute_type,
+                }
+                if local_only:
+                    kwargs["local_files_only"] = True
+                self._model = module.WhisperModel(self._config.model_size, **kwargs)
             return self._model
+
+    def warm(self) -> threading.Thread:
+        """Load the model in the background when it is already downloaded, so the first
+        voice message after a restart isn't slow. Never downloads; failures are logged."""
+
+        def run() -> None:
+            try:
+                self._load(local_only=True)
+                log.info("speech model %s loaded", self._config.model_size)
+            except Exception as exc:  # not installed, not downloaded yet, ...
+                log.info("speech model not preloaded: %s", exc)
+
+        thread = threading.Thread(target=run, name="stt-warm", daemon=True)
+        thread.start()
+        return thread
 
     def transcribe(self, audio: bytes) -> str:
         if not audio:
             return ""
         model = self._load()
+        # Greedy decoding (beam_size=1) is several times faster on a CPU and just as good
+        # for short spoken requests.
         segments, _info = model.transcribe(
-            io.BytesIO(audio), language=self._config.language, vad_filter=True
+            io.BytesIO(audio), language=self._config.language, vad_filter=True, beam_size=1
         )
         return " ".join(s.text.strip() for s in segments).strip()
 

@@ -218,7 +218,32 @@ def test_whisper_stt(monkeypatch: pytest.MonkeyPatch) -> None:
     assert stt.transcribe(b"") == ""
     assert stt.transcribe(b"audio") == "Brief me."
     assert seen["init"] == ("tiny", {"device": "cpu", "compute_type": "int8"})
-    assert seen["kwargs"] == {"language": "en", "vad_filter": True}
+    assert seen["kwargs"] == {"language": "en", "vad_filter": True, "beam_size": 1}
+
+
+def test_whisper_warm_loads_only_a_downloaded_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[dict[str, Any]] = []
+
+    class Model:
+        def __init__(self, size: str, **kwargs: Any) -> None:
+            seen.append(kwargs)
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=Model))
+    stt = WhisperSTT(SttConfig())
+    stt.warm().join(5)
+    assert seen == [{"device": "cpu", "compute_type": "int8", "local_files_only": True}]
+    stt.transcribe(b"")  # loaded once, reused
+
+    class NotDownloaded:
+        def __init__(self, size: str, **kwargs: Any) -> None:
+            raise OSError("not in the local cache")
+
+    monkeypatch.setitem(
+        sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=NotDownloaded)
+    )
+    missing = WhisperSTT(SttConfig())
+    missing.warm().join(5)  # logged, not raised
+    assert missing._model is None
 
 
 def test_missing_engines_raise_voice_unavailable(

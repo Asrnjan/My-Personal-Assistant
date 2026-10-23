@@ -239,6 +239,8 @@ def create_app(
         if scheduler is not None:
             scheduler.start()
             log.info("scheduler started (%s)", app_config.timezone)
+        if isinstance(stt, WhisperSTT):
+            stt.warm()
         tg["live"] = True
         if tg["bot"] is not None and settings.telegram_polling:
             tg["stop"] = threading.Event()
