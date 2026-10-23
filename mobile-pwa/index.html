@@ -321,6 +321,22 @@
       <p id="wake-unsupported" class="hint warn" hidden>This browser can't listen in the background. Use Chrome, or tap the stars.</p>
     </section>
 
+    <section class="sheet-section" aria-labelledby="voice-title">
+      <h3 id="voice-title">Voice</h3>
+      <div class="field-row">
+        <label for="voice-select">Atlas speaks with</label>
+        <select id="voice-select" class="select"></select>
+        <label for="voice-speed">Speed</label>
+        <select id="voice-speed" class="select">
+          <option value="1">Relaxed</option>
+          <option value="1.12">Natural</option>
+          <option value="1.25">Quick</option>
+        </select>
+        <button id="voice-test" type="button" class="btn btn-ghost">Test the voice</button>
+      </div>
+      <p class="hint">The most human voices are the ones marked “Natural” or “Online”. On Windows, open Atlas in Microsoft Edge to get them (Aria, Jenny, Ava, Emma).</p>
+    </section>
+
     <section class="sheet-section" aria-labelledby="push-title">
       <h3 id="push-title">Notifications</h3>
       <p class="hint">Morning brief, evening wrap-up and P1 alerts.</p>

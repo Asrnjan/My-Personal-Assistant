@@ -251,11 +251,13 @@ async function withToken(page, token = TOKEN) {
  * options.recognition: true to provide a fake SpeechRecognition (default), false to remove it.
  * options.synthesis: 'ok' (default) or 'blocked' (speak fails until window.__allowSpeech = true).
  * options.mediaRecorder: true to install a fake getUserMedia + MediaRecorder.
+ * options.voices: the voices getVoices() returns, as [{ name, lang }].
  */
 async function stubSpeech(page, options = {}) {
   const opts = { recognition: true, synthesis: 'ok', mediaRecorder: false, ...options };
   await page.addInitScript((o) => {
     window.__spoken = [];
+    window.__utterances = [];
     window.__recognitions = [];
     window.__allowSpeech = o.synthesis !== 'blocked';
 
@@ -318,7 +320,7 @@ async function stubSpeech(page, options = {}) {
       speaking: false,
       cancel() {},
       getVoices() {
-        return [];
+        return (o.voices || []).map((v) => ({ voiceURI: v.name, localService: true, ...v }));
       },
       speak(utterance) {
         if (!window.__allowSpeech) {
@@ -326,6 +328,11 @@ async function stubSpeech(page, options = {}) {
           return;
         }
         window.__spoken.push(utterance.text);
+        window.__utterances.push({
+          text: utterance.text,
+          voice: utterance.voice ? utterance.voice.name : null,
+          rate: utterance.rate,
+        });
         setTimeout(() => {
           if (utterance.onstart) utterance.onstart();
           // 'no-end' copies Chrome's bug: the speech finishes but onend never fires.
