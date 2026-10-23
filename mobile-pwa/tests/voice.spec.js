@@ -245,3 +245,31 @@ test('a finished sentence is sent in about a second', async ({ page }) => {
   await expect.poll(() => findCalls(calls, 'POST', '/converse').length, { intervals: [50] }).toBe(1);
   expect(Date.now() - t0).toBeLessThan(1600);
 });
+
+test('the first tap unlocks speech, as iPhones require', async ({ page }) => {
+  await setup(page);
+  await page.goto('/');
+  expect(await page.evaluate(() => window.__silentUtterances || 0)).toBe(0);
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__silentUtterances || 0)).toBe(1);
+  // Only once per visit.
+  await page.locator('body').click({ position: { x: 5, y: 5 } });
+  expect(await page.evaluate(() => window.__silentUtterances)).toBe(1);
+});
+
+test('a spoken answer the browser refuses to play is one tap away', async ({ page }) => {
+  await setup(page, {
+    speech: { synthesis: 'blocked' },
+    overrides: { 'POST /converse': () => ({ json: converseReply(REPLY) }) },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
+  await page.evaluate((text) => window.__recognitions[0].__say(text), SAID);
+
+  const prompt = page.getByRole('button', { name: 'Tap to hear the answer' });
+  await expect(prompt).toBeVisible();
+  await page.evaluate(() => { window.__allowSpeech = true; });
+  await prompt.click();
+  await expect.poll(() => page.evaluate(() => window.__spoken)).toContain(REPLY);
+});
