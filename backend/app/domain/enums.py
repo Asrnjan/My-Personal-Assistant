@@ -13,6 +13,8 @@ class Source(StrEnum):
     ASANA = "asana"
     CLICKUP = "clickup"
     SLACK = "slack"
+    # Created by the assistant itself, e.g. action items from meeting notes.
+    NOTES = "notes"
 
 
 class ItemKind(StrEnum):
@@ -95,6 +97,8 @@ class ActionKind(StrEnum):
     # Changing who is on the CEO's team.
     ADD_CONTACT = "add_contact"
     REMOVE_CONTACT = "remove_contact"
+    # Moving a meeting on the CEO's calendar to another time.
+    MOVE_MEETING = "move_meeting"
 
 
 class ActionStatus(StrEnum):

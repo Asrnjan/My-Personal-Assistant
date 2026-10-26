@@ -88,6 +88,14 @@ class GoogleCalendarAdapter(CalendarAdapter):
         created = self._http.send_json("POST", self._events_url, body, params=params)
         return _event(created)
 
+    def move_event(self, event_id: str, start: datetime, end: datetime) -> None:
+        self._http.send_json(
+            "PATCH",
+            f"{self._events_url}/{event_id}",
+            {"start": {"dateTime": start.isoformat()}, "end": {"dateTime": end.isoformat()}},
+            params={"sendUpdates": "all"},
+        )
+
     def _patch_attendees(self, event_id: str, attendees: list[dict[str, Any]]) -> None:
         self._http.send_json(
             "PATCH",

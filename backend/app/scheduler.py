@@ -24,6 +24,7 @@ from app.engine.briefing import Brief, Briefer, BriefKind
 from app.engine.followup import FollowUpReport, FollowUpService
 from app.engine.notices import Notices
 from app.engine.prep import MeetingPrep
+from app.engine.reminders import Reminders
 from app.engine.sync import SyncOutcome, SyncService
 from app.events import Event, EventBus
 
@@ -33,6 +34,9 @@ log = logging.getLogger(__name__)
 FOLLOWUP_MINUTES = 30
 # How often to look for a meeting that is about to start and needs a prep.
 PREP_CHECK_MINUTES = 2
+# Reminders due now; promises read from sent mail less often.
+REMINDER_CHECK_MINUTES = 5
+SENT_SCAN_HOURS = 3
 
 
 @dataclass
@@ -53,6 +57,7 @@ class AssistantJobs:
         *,
         prep: MeetingPrep | None = None,
         notices: Notices | None = None,
+        reminders: Reminders | None = None,
     ) -> None:
         self._sync = sync
         self._briefer = briefer
@@ -62,6 +67,7 @@ class AssistantJobs:
         self._actions = actions
         self._prep = prep
         self._notices = notices
+        self._reminders = reminders
         # The scheduler thread and a manual /sync must not ingest at the same time.
         self._sync_lock = threading.Lock()
 
@@ -142,6 +148,27 @@ class AssistantJobs:
         except Exception:
             log.exception("meeting prep failed")
 
+    def send_reminders(self) -> list[str]:
+        if self._reminders is None or self._notices is None:
+            return []
+        texts = self._reminders.due_now()
+        for text in texts:
+            self._notices.tell(f"Reminder: {text}")
+        return texts
+
+    def background_reminders(self) -> None:
+        try:
+            self.send_reminders()
+        except Exception:
+            log.exception("reminders failed")
+
+    def background_promises(self) -> None:
+        try:
+            if self._reminders is not None:
+                self._reminders.scan_sent()
+        except Exception:
+            log.exception("reading promises from sent mail failed")
+
 
 def build_scheduler(jobs: AssistantJobs, app_config: AppConfig) -> BackgroundScheduler:
     tz = app_config.tz
@@ -163,6 +190,16 @@ def build_scheduler(jobs: AssistantJobs, app_config: AppConfig) -> BackgroundSch
         jobs.background_followups,
         IntervalTrigger(minutes=FOLLOWUP_MINUTES, timezone=tz),
         id="followups",
+    )
+    scheduler.add_job(
+        jobs.background_reminders,
+        IntervalTrigger(minutes=REMINDER_CHECK_MINUTES, timezone=tz),
+        id="reminders",
+    )
+    scheduler.add_job(
+        jobs.background_promises,
+        IntervalTrigger(hours=SENT_SCAN_HOURS, timezone=tz),
+        id="promises",
     )
     if app_config.workday.prep_minutes_before:
         scheduler.add_job(

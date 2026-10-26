@@ -7,12 +7,14 @@ import mimetypes
 import threading
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app import __version__
 from app.api import (
@@ -43,9 +45,11 @@ from app.engine.delegation import DelegationService
 from app.engine.followup import FollowUpService
 from app.engine.insights import day_insights
 from app.engine.learning import LearningService
+from app.engine.notes import MeetingNotes
 from app.engine.notices import Notices
 from app.engine.prep import MeetingPrep
 from app.engine.priority import PriorityEngine
+from app.engine.reminders import Reminders, unanswered_senders
 from app.engine.rubric import load_rubric
 from app.engine.skills import Skills
 from app.engine.sync import SyncService
@@ -161,14 +165,18 @@ def create_app(
         )
 
     budget.set_on_exceeded(budget_exceeded)
-    briefer = Briefer(
-        session_factory,
-        app_config,
-        clock,
-        morning_notes=lambda s, on, now: day_insights(
-            s, on, now, tz, app_config.workday
-        ).sentences(),
-    )
+    reminders = Reminders(session_factory, llm, adapters, tz, clock)
+
+    def morning_notes(s: Session, on: date, now: datetime) -> list[str]:
+        notes = day_insights(s, on, now, tz, app_config.workday).sentences()
+        notes += reminders.due_on(s, on)
+        waiting = unanswered_senders(s)
+        if waiting:
+            who, n = waiting[0]
+            notes.append(f"{who} has written {n} times without an answer.")
+        return notes
+
+    briefer = Briefer(session_factory, app_config, clock, morning_notes=morning_notes)
     skills = Skills(
         prep=MeetingPrep(
             session_factory,
@@ -179,6 +187,9 @@ def create_app(
             minutes_before=app_config.workday.prep_minutes_before,
         ),
         triage=InboxTriage(session_factory, llm),
+        notes=MeetingNotes(session_factory, llm, tz, clock),
+        reminders=reminders,
+        workday=app_config.workday,
     )
     learning = LearningService(session_factory, clock)
     delegation = DelegationService(llm, adapters, notifiers, tz, clock)
@@ -217,6 +228,7 @@ def create_app(
         actions,
         prep=skills.prep,
         notices=notices,
+        reminders=reminders,
     )
 
     stt = stt or WhisperSTT(app_config.stt)

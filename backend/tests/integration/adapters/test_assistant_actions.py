@@ -207,3 +207,41 @@ def test_teams_chats_messages_and_sending(mock_http: respx.MockRouter, graph: Ht
 
 def test_plain_text() -> None:
     assert plain_text("<div>Line one<br/>line &amp; two</div>") == "Line one line & two"
+
+
+def test_moving_meetings(
+    mock_http: respx.MockRouter, graph: HttpClient, make_http: Callable[..., HttpClient]
+) -> None:
+    google = mock_http.patch(f"{CAL}/calendars/primary/events/e1").mock(
+        return_value=httpx.Response(200, json={})
+    )
+    GoogleCalendarAdapter(make_http("google", CAL)).move_event("e1", START, END)
+    assert google.calls[0].request.url.params["sendUpdates"] == "all"
+    assert _body(google)["start"] == {"dateTime": START.isoformat()}
+
+    outlook = mock_http.patch(f"{BASE_URL}/me/events/o1").mock(
+        return_value=httpx.Response(200, json={})
+    )
+    OutlookCalendarAdapter(graph).move_event("o1", START, END)
+    assert _body(outlook)["end"] == {"dateTime": "2026-10-19T10:00:00", "timeZone": "UTC"}
+
+
+def test_reading_sent_mail(
+    mock_http: respx.MockRouter, graph: HttpClient, make_http: Callable[..., HttpClient]
+) -> None:
+    sent = mock_http.get(f"{BASE_URL}/me/mailFolders/SentItems/messages").mock(
+        return_value=httpx.Response(
+            200, json={"value": [{"id": "s1", "subject": "Deck", "toRecipients": []}]}
+        )
+    )
+    assert [m.id for m in OutlookMailAdapter(graph).list_sent(START)] == ["s1"]
+    assert sent.calls[0].request.url.params["$filter"] == "sentDateTime ge 2026-10-19T09:30:00Z"
+
+    listing = mock_http.get(f"{GMAIL}/messages").mock(
+        return_value=httpx.Response(200, json={"messages": [{"id": "m1"}]})
+    )
+    mock_http.get(f"{GMAIL}/messages/m1").mock(
+        return_value=httpx.Response(200, json=fixture("google/gmail_m1.json"))
+    )
+    assert len(GmailAdapter(make_http("google", GMAIL)).list_sent(START)) == 1
+    assert listing.calls[0].request.url.params["q"].startswith("in:sent after:")

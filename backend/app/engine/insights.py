@@ -138,3 +138,27 @@ def day_insights(
         focus_minutes=workday.focus_minutes,
         team_overdue=team_overdue(s, now),
     )
+
+
+def first_free_slot(
+    s: Session, on: date, now: datetime, tz: tzinfo, workday: WorkdayConfig, minutes: int
+) -> datetime | None:
+    """The start of the first gap of ``minutes`` between meetings in working hours."""
+    lo = max(datetime.combine(on, workday.start, tzinfo=tz), now)
+    hi = datetime.combine(on, workday.end, tzinfo=tz)
+    # Start on a quarter hour.
+    lo += timedelta(minutes=-lo.minute % 15, seconds=-lo.second, microseconds=-lo.microsecond)
+    need = timedelta(minutes=minutes)
+    day_lo = datetime.combine(on, time.min, tzinfo=tz)
+    busy = sorted(
+        (m_start, m_end)
+        for m_start, m_end, _ in _spans(_meetings(s, day_lo, day_lo + timedelta(days=1)))
+    )
+    cursor = lo
+    for b_start, b_end in busy:
+        if b_end <= cursor:
+            continue
+        if b_start - cursor >= need:
+            break
+        cursor = max(cursor, b_end)
+    return cursor if cursor + need <= hi else None

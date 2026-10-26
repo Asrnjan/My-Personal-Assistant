@@ -271,6 +271,8 @@ class ActionService:
             return self._decline(s, item, str(params.get("note") or DEFAULT_DECLINE_NOTE), via)
         if row.kind == ActionKind.CLOSE_TASK:
             return self._close(s, item, via)
+        if row.kind == ActionKind.MOVE_MEETING:
+            return self._move(s, item, params, via)
         if row.kind == ActionKind.DEFER:
             until = date.fromisoformat(str(params["until"]))
             return self._local(
@@ -425,6 +427,27 @@ class ActionService:
         decision = self._decision(s, item, DecisionAction.DECLINE, via, message)
         item.status = ItemStatus.DECLINED
         audit(s, "meeting.decline", "ok", target=item.id, decision_id=decision.id, note=note)
+        return _Outcome(True, message, decision.id)
+
+    def _move(
+        self, s: Session, item: ItemRow, params: dict[str, Any], via: ApprovedVia
+    ) -> _Outcome:
+        title = clean_title(item.title)
+        calendar = calendar_for(self._delegation.adapters(), item.source)
+        if item.kind != ItemKind.MEETING or calendar is None:
+            return _Outcome(False, f"I can't move {title} from here.")
+        start = datetime.fromisoformat(str(params["start"]))
+        end = datetime.fromisoformat(str(params["end"]))
+        old = {"start": item.start.isoformat() if item.start else None}
+        old["end"] = item.end.isoformat() if item.end else None
+        try:
+            calendar.move_event(item.source_id, start, end)
+        except NotImplementedError:
+            return _Outcome(False, f"Your calendar can't move {title}.")
+        message = f"Moved {title}. The attendees have the new time."
+        decision = self._decision(s, item, DecisionAction.DEFER, via, message)
+        item.start, item.end = start, end
+        audit(s, "meeting.move", "ok", target=item.id, decision_id=decision.id, previous=old)
         return _Outcome(True, message, decision.id)
 
     def _close(self, s: Session, item: ItemRow, via: ApprovedVia) -> _Outcome:

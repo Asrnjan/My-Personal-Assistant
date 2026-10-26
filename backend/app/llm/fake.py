@@ -169,6 +169,10 @@ def offline_responder(score: int = 50, band: str = "P2_delegate") -> Responder:
                 {"item_id": i, "reply": "Thanks, I'll come back to you on this."} for i in ids
             ]
             return fake_message({"drafts": drafts}, model=model)
+        if "meeting notes or a meeting transcript" in system:
+            return fake_message({"summary": "Noted.", "decisions": [], "actions": []}, model=model)
+        if "find promises the CEO made" in system:
+            return fake_message({"promises": []}, model=model)
         if params.get("tools"):
             return fake_message(
                 "I'm running offline, so I can only handle brief me, yes, cancel and skip.",

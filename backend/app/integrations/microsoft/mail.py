@@ -62,6 +62,16 @@ class OutlookMailAdapter(EmailAdapter):
         page = self._http.get_json("/me/messages", params=params)
         return [_message(m) for m in page.get("value", [])][:limit]
 
+    def list_sent(self, since: datetime, limit: int = 50) -> list[EmailMessage]:
+        params = {
+            "$filter": f"sentDateTime ge {_odata_time(since)}",
+            "$orderby": "sentDateTime desc",
+            "$select": _SELECT,
+            "$top": str(limit),
+        }
+        page = self._http.get_json("/me/mailFolders/SentItems/messages", params=params)
+        return [_message(m) for m in page.get("value", [])][:limit]
+
     def get(self, message_id: str) -> EmailMessage:
         return _message(
             self._http.get_json(f"/me/messages/{message_id}", params={"$select": _SELECT})

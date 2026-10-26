@@ -82,6 +82,16 @@ class OutlookCalendarAdapter(CalendarAdapter):
         created = self._http.send_json("POST", "/me/events", body, headers={"Prefer": UTC_PREFER})
         return _event(created)
 
+    def move_event(self, event_id: str, start: datetime, end: datetime) -> None:
+        self._http.send_json(
+            "PATCH",
+            f"/me/events/{event_id}",
+            {
+                "start": {"dateTime": _graph_time(start), "timeZone": "UTC"},
+                "end": {"dateTime": _graph_time(end), "timeZone": "UTC"},
+            },
+        )
+
 
 def _graph_time(dt: datetime) -> str:
     return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")

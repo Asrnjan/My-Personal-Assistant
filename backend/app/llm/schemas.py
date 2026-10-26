@@ -43,6 +43,29 @@ class ReplyDrafts(BaseModel):
     drafts: list[ReplyDraft]
 
 
+class NoteAction(BaseModel):
+    task: str = Field(description="What has to be done, as a short task title.")
+    owner: str | None = Field(description="Who agreed to do it, as named in the notes.")
+    due: str | None = Field(description="Due date as YYYY-MM-DD, if one was agreed.")
+
+
+class NotesSummary(BaseModel):
+    summary: str = Field(description="At most five short spoken sentences.")
+    decisions: list[str]
+    actions: list[NoteAction]
+
+
+class Promise(BaseModel):
+    message_id: str
+    to: str = Field(description="Who the CEO promised, by name or address.")
+    what: str = Field(description="What the CEO promised to do, as a short phrase.")
+    due: str | None = Field(description="When, as YYYY-MM-DD, if a time was given.")
+
+
+class Promises(BaseModel):
+    promises: list[Promise]
+
+
 class AckClassification(BaseModel):
     acknowledged: bool
     has_question: bool

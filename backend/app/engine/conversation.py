@@ -44,9 +44,11 @@ from app.engine.delegation import (
     reachable_channels,
     spoken_day,
 )
+from app.engine.insights import first_free_slot
 from app.engine.learning import LearningService, preferences_block
 from app.engine.prep import upcoming_meeting
 from app.engine.priority import prescore
+from app.engine.reminders import unanswered_senders
 from app.engine.rubric import Rubric
 from app.engine.skills import SKILL_TOOLS, Skills
 from app.integrations.base import Chat
@@ -1374,6 +1376,130 @@ class ConversationAgent:
             self._propose(state, turn, ActionKind.REPLY_EMAIL, None, readback, params)
             readbacks.append(readback)
         return {"summary": result.summary(), "drafted_replies": readbacks}
+
+    def _tool_capture_meeting_notes(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.notes is None:
+            return {"error": "Meeting notes aren't available."}
+        notes = str(args.get("notes", "")).strip()
+        if not notes:
+            return self._ask(turn, "What were the notes?")
+        meeting = str(args.get("meeting", "") or "").strip()
+        summary = self.skills.notes.read(notes, meeting)
+        tracked = self.skills.notes.track(summary, meeting)
+        readbacks: list[str] = []
+        unassigned: list[str] = []
+        with self._sessions() as s:
+            resolver = NameResolver(all_delegates(s))
+            for action in tracked:
+                match = resolver.resolve(action.owner) if action.owner else None
+                item = s.get(ItemRow, action.item_id)
+                if match is None or match.delegate is None or item is None:
+                    unassigned.append(action.task)
+                    continue
+                proposal = self._delegate_proposal(
+                    s,
+                    item,
+                    match.delegate.id,
+                    action.due.isoformat() if action.due else None,
+                    f"Agreed in {meeting or 'our meeting'}.",
+                    "full_ownership",
+                )
+                if isinstance(proposal, str):
+                    unassigned.append(action.task)
+                    continue
+                readback, params = proposal
+                self._propose(state, turn, ActionKind.DELEGATE, item.id, readback, params)
+                readbacks.append(readback)
+        return {
+            "summary": summary.summary,
+            "decisions": summary.decisions,
+            "delegations_to_confirm": readbacks,
+            "on_your_list_with_no_owner": unassigned,
+        }
+
+    def _when(self, args: dict[str, Any], key: str = "start_time") -> datetime:
+        day = date.fromisoformat(str(args.get("date", "")))
+        raw = str(args.get(key) or "09:00")
+        return datetime.combine(day, time.fromisoformat(raw), tzinfo=self._tz)
+
+    def _tool_block_focus_time(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        workday = self.skills.workday
+        minutes = int(args.get("duration_minutes") or (workday.focus_minutes if workday else 90))
+        day = date.fromisoformat(str(args.get("date", "")))
+        if args.get("start_time"):
+            start = self._when(args)
+        else:
+            if workday is None:
+                return {"error": "Say a start time."}
+            with self._sessions() as s:
+                found = first_free_slot(s, day, self._clock(), self._tz, workday, minutes)
+            if found is None:
+                return {"error": f"There's no free {minutes} minutes that day. Pick a time."}
+            start = found
+        end = start + timedelta(minutes=minutes)
+        today = self._clock().astimezone(self._tz).date()
+        readback = (
+            f"Holding {spoken_time(start, self._tz)} to {spoken_time(end, self._tz)} "
+            f"{spoken_day(day, today)} as focus time. Confirm?"
+        )
+        params = {
+            "title": "Focus time",
+            "subject": "Focus time",
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "attendees": [],
+            "online": False,
+        }
+        return self._propose(state, turn, ActionKind.BOOK_MEETING, None, readback, params)
+
+    def _tool_move_meeting(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        start = self._when(args)
+        today = self._clock().astimezone(self._tz).date()
+
+        def propose(_s: Session, item: ItemRow) -> Any:
+            if item.kind != ItemKind.MEETING:
+                return {"error": "That item is not a meeting."}
+            length = (item.end - item.start) if item.start and item.end else timedelta(hours=1)
+            end = start + length
+            readback = (
+                f"Moving {clean_title(item.title)} to {spoken_day(start.date(), today)} at "
+                f"{spoken_time(start, self._tz)}; the attendees get the update. Confirm?"
+            )
+            params = {"start": start.isoformat(), "end": end.isoformat()}
+            return self._propose(state, turn, ActionKind.MOVE_MEETING, item.id, readback, params)
+
+        return self._with_item(state, args, propose)
+
+    def _tool_remind_me(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.reminders is None:
+            return {"error": "Reminders aren't available."}
+        text = " ".join(str(args.get("text", "")).split())
+        if not text:
+            return self._ask(turn, "What should I remind you of?")
+        at = self._when(args, "time")
+        if at <= self._clock():
+            return {"error": "That time has passed. When should I remind you?"}
+        self.skills.reminders.add(text, at)
+        today = self._clock().astimezone(self._tz).date()
+        return {
+            "status": "saved",
+            "when": f"{spoken_day(at.date(), today)} at {spoken_time(at, self._tz)}",
+        }
+
+    def _tool_list_reminders(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.reminders is None:
+            return {"error": "Reminders aren't available."}
+        far = self._clock().astimezone(self._tz).date() + timedelta(days=60)
+        with self._sessions() as s:
+            open_items = self.skills.reminders.due_on(s, far)
+            waiting = [f"{who} has {n} emails waiting for you" for who, n in unanswered_senders(s)]
+        return {"open_promises_and_reminders": open_items, "people_waiting": waiting}
+
+    def _tool_reminder_done(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.reminders is None:
+            return {"error": "Reminders aren't available."}
+        closed = self.skills.reminders.done(str(args.get("text", "")))
+        return {"closed": closed}
 
     def _tool_set_preference(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
         pref = self._learning.add_rule(str(args.get("rule", "")))
