@@ -52,9 +52,6 @@ class MeetingPrep:
         self._minutes = minutes_before
         self._facts = facts
 
-    def set_facts(self, facts: FactsLookup) -> None:
-        self._facts = facts
-
     # -- context -----------------------------------------------------------------
 
     def _context(self, s: Session, item: ItemRow) -> tuple[list[str], str]:

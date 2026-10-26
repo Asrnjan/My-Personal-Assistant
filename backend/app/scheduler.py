@@ -27,6 +27,7 @@ from app.engine.prep import MeetingPrep
 from app.engine.pulse import TeamPulse
 from app.engine.reminders import Reminders
 from app.engine.sync import SyncOutcome, SyncService
+from app.engine.thinking import Thinking
 from app.events import Event, EventBus
 
 log = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ class AssistantJobs:
         notices: Notices | None = None,
         reminders: Reminders | None = None,
         pulse: TeamPulse | None = None,
+        thinking: Thinking | None = None,
     ) -> None:
         self._sync = sync
         self._briefer = briefer
@@ -71,6 +73,7 @@ class AssistantJobs:
         self._notices = notices
         self._reminders = reminders
         self._pulse = pulse
+        self._thinking = thinking
         # The scheduler thread and a manual /sync must not ingest at the same time.
         self._sync_lock = threading.Lock()
 
@@ -165,18 +168,27 @@ class AssistantJobs:
         except Exception:
             log.exception("reminders failed")
 
+    def read_sent_mail(self) -> None:
+        """Promises from sent mail; the writing style the first time sent mail is there."""
+        if self._reminders is not None:
+            self._reminders.scan_sent()
+        if self._thinking is not None and not self._thinking.style():
+            self._thinking.learn_style()
+
     def background_promises(self) -> None:
         try:
-            if self._reminders is not None:
-                self._reminders.scan_sent()
+            self.read_sent_mail()
         except Exception:
-            log.exception("reading promises from sent mail failed")
+            log.exception("reading sent mail failed")
 
     def weekly(self) -> list[str]:
         """The Friday summaries: the team pulse (and, when wired, the activity report)."""
         texts = []
         if self._pulse is not None:
             texts.append(self._pulse.weekly())
+        if self._thinking is not None:
+            # Writing changes slowly; refreshing the style weekly keeps drafts current.
+            self._thinking.learn_style()
         if self._notices is not None:
             for text in texts:
                 self._notices.tell(text)

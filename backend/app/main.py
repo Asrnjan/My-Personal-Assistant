@@ -45,6 +45,7 @@ from app.engine.delegation import DelegationService
 from app.engine.followup import FollowUpService
 from app.engine.insights import day_insights
 from app.engine.learning import LearningService
+from app.engine.memory import Memory
 from app.engine.notes import MeetingNotes
 from app.engine.notices import Notices
 from app.engine.prep import MeetingPrep
@@ -54,6 +55,7 @@ from app.engine.reminders import Reminders, unanswered_senders
 from app.engine.rubric import load_rubric
 from app.engine.skills import Skills
 from app.engine.sync import SyncService
+from app.engine.thinking import Thinking
 from app.engine.triage import InboxTriage
 from app.events import EventBus
 from app.integrations.connections import ConnectionService
@@ -167,6 +169,8 @@ def create_app(
 
     budget.set_on_exceeded(budget_exceeded)
     reminders = Reminders(session_factory, llm, adapters, tz, clock)
+    memory = Memory(session_factory, clock)
+    thinking = Thinking(session_factory, llm, adapters, memory, clock)
 
     def morning_notes(s: Session, on: date, now: datetime) -> list[str]:
         notes = day_insights(s, on, now, tz, app_config.workday).sentences()
@@ -186,12 +190,15 @@ def create_app(
             tz,
             clock,
             minutes_before=app_config.workday.prep_minutes_before,
+            facts=memory.recall,
         ),
-        triage=InboxTriage(session_factory, llm),
+        triage=InboxTriage(session_factory, llm, style=thinking.style),
         notes=MeetingNotes(session_factory, llm, tz, clock),
         reminders=reminders,
         workday=app_config.workday,
         pulse=TeamPulse(session_factory, tz, clock),
+        memory=memory,
+        thinking=thinking,
     )
     learning = LearningService(session_factory, clock)
     delegation = DelegationService(llm, adapters, notifiers, tz, clock)
@@ -233,6 +240,7 @@ def create_app(
         notices=notices,
         reminders=reminders,
         pulse=skills.pulse,
+        thinking=thinking,
     )
 
     stt = stt or WhisperSTT(app_config.stt)

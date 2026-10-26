@@ -10,10 +10,12 @@ from typing import Any
 
 from app.config import WorkdayConfig
 from app.engine.followup import FollowUpService
+from app.engine.memory import Memory
 from app.engine.notes import MeetingNotes
 from app.engine.prep import MeetingPrep
 from app.engine.pulse import TeamPulse
 from app.engine.reminders import Reminders
+from app.engine.thinking import Thinking
 from app.engine.triage import InboxTriage
 
 
@@ -26,6 +28,8 @@ class Skills:
     workday: WorkdayConfig | None = None
     pulse: TeamPulse | None = None
     followups: FollowUpService | None = None
+    memory: Memory | None = None
+    thinking: Thinking | None = None
 
 
 _ITEM_REF_OPTIONAL = {
@@ -148,6 +152,63 @@ SKILL_TOOLS: list[dict[str, Any]] = [
                 "item_ref": {"type": "string", "description": "The item's id or number."}
             },
             "required": ["item_ref"],
+        },
+    },
+    {
+        "name": "remember",
+        "description": (
+            "Remember a fact the CEO tells you for later (people, clients, commitments, "
+            "context). Done straight away."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"fact": {"type": "string", "description": "One self-contained fact."}},
+            "required": ["fact"],
+        },
+    },
+    {
+        "name": "forget",
+        "description": "Forget a fact the CEO asked you to remember.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"fact": {"type": "string"}},
+            "required": ["fact"],
+        },
+    },
+    {
+        "name": "recall",
+        "description": "Look up what you were told to remember about someone or something.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"about": {"type": "string"}},
+            "required": ["about"],
+        },
+    },
+    {
+        "name": "think_through",
+        "description": (
+            "Think a decision through with the CEO: recommendation, pros and cons, risks and "
+            "what to find out, grounded in their own context. Say the answer as it is."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"question": {"type": "string", "description": "The decision."}},
+            "required": ["question"],
+        },
+    },
+    {
+        "name": "write_draft",
+        "description": (
+            "Draft a longer piece in the CEO's voice: a LinkedIn post, a board or investor "
+            "update, a team announcement, a long email. Returns the draft to read out or show."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "description": "What it is, e.g. 'LinkedIn post'."},
+                "brief": {"type": "string", "description": "What it should say, with facts."},
+            },
+            "required": ["kind", "brief"],
         },
     },
     {

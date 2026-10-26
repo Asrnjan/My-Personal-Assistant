@@ -94,6 +94,7 @@ class LLMClient:
         max_tokens: int,
         output_schema: dict[str, Any] | None = None,
         tools: Sequence[dict[str, Any]] | None = None,
+        effort: str | None = None,
     ) -> dict[str, Any]:
         """Assemble request parameters.
 
@@ -106,7 +107,7 @@ class LLMClient:
         blocks: list[dict[str, Any]] = [{"type": "text", "text": t} for t in texts]
         blocks[-1]["cache_control"] = {"type": "ephemeral"}
 
-        output_config: dict[str, Any] = {"effort": self._effort_for(task)}
+        output_config: dict[str, Any] = {"effort": effort or self._effort_for(task)}
         if output_schema is not None:
             output_config["format"] = {"type": "json_schema", "schema": output_schema}
 
@@ -139,6 +140,7 @@ class LLMClient:
         max_tokens: int = 4096,
         output_schema: dict[str, Any] | None = None,
         tools: Sequence[dict[str, Any]] | None = None,
+        effort: str | None = None,
     ) -> Message:
         """Send one request. Raises ``BudgetExceededError`` before sending when
         the monthly cap is reached, and ``LLMRefusalError`` / ``LLMTruncatedError``
@@ -151,6 +153,7 @@ class LLMClient:
             max_tokens=max_tokens,
             output_schema=output_schema,
             tools=tools,
+            effort=effort,
         )
         response = self._sender.send(params)
         usage = response.usage

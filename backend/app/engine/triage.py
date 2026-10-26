@@ -75,9 +75,6 @@ class InboxTriage:
         self._llm = llm
         self._style = style
 
-    def set_style(self, style: StyleLookup) -> None:
-        self._style = style
-
     def run(self, draft: bool = True) -> Triage:
         with self._sessions() as s:
             rows = list(

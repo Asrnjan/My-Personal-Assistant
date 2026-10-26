@@ -755,13 +755,20 @@ class ConversationAgent:
             {"name": d.full_name, "aliases": d.aliases, "owns": d.ownership_areas}
             for d in delegates
         ]
-        return [
+        blocks = [
             load_prompt("conversation").text,
             f"Your name is {self.name}. The CEO may start a request with your name; "
             "that is just how they get your attention.",
             "The CEO's team:\n" + json.dumps(team, sort_keys=True),
             "CEO preferences:\n" + ("\n".join(f"- {p}" for p in prefs) or "- none yet"),
         ]
+        facts = self.skills.memory.all() if self.skills.memory else []
+        if facts:
+            blocks.append("Things the CEO asked you to remember:\n" + "\n".join(facts))
+        style = self.skills.thinking.style() if self.skills.thinking else ""
+        if style:
+            blocks.append("How the CEO writes (use it for any message you draft):\n" + style)
+        return blocks
 
     def _ask_model(self, state: _State, turn: _Turn) -> str:
         # Plain dicts; the SDK validates the shape when the request is sent.
@@ -1519,6 +1526,39 @@ class ConversationAgent:
             return found
         title = followups.finish(str(found))
         return {"status": "closed", "title": title}
+
+    def _tool_remember(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.memory is None:
+            return {"error": "Memory isn't available."}
+        fact = str(args.get("fact", "")).strip()
+        if not fact:
+            return self._ask(turn, "What should I remember?")
+        return {"status": "remembered", "fact": self.skills.memory.remember(fact)}
+
+    def _tool_forget(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.memory is None:
+            return {"error": "Memory isn't available."}
+        return {"forgotten": self.skills.memory.forget(str(args.get("fact", "")))}
+
+    def _tool_recall(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.memory is None:
+            return {"error": "Memory isn't available."}
+        found = self.skills.memory.recall([str(args.get("about", ""))])
+        return {"facts": found or ["Nothing remembered about that."]}
+
+    def _tool_think_through(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.thinking is None:
+            return {"error": "That isn't available."}
+        question = str(args.get("question", "")).strip() or turn.text
+        return {"answer": self.skills.thinking.think_through(question)}
+
+    def _tool_write_draft(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.thinking is None:
+            return {"error": "That isn't available."}
+        draft = self.skills.thinking.write(
+            str(args.get("kind", "") or "note"), str(args.get("brief", "") or turn.text)
+        )
+        return {"draft": draft}
 
     def _tool_reminder_done(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
         if self.skills.reminders is None:
