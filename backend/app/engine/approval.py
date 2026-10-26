@@ -64,6 +64,11 @@ class ApprovalPolicy(BaseModel):
             r"\b(delete|erase|wipe|purge)\b",
         ]
     )
+    # Actions that run without asking when everyone involved is on the CEO's team
+    # (send_email, reply_email, teams_message, book_meeting, delegate). Anyone outside the
+    # team still needs a yes. Also changeable by voice ("send emails to my team without
+    # asking").
+    auto_when_team: list[str] = Field(default_factory=list)
     refusal: str = DEFAULT_REFUSAL
 
     @model_validator(mode="after")

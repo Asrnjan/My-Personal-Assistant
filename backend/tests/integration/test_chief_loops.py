@@ -78,12 +78,13 @@ def test_waiting_on_pulse_and_finishing_work(harness: Harness) -> None:
     assert harness.item("Hiring plan").status == ItemStatus.DONE
 
     jobs: AssistantJobs = harness.app.state.jobs
-    pulse = jobs.weekly()[0]
+    pulse, activity = jobs.weekly()
     assert pulse == (
         "Team pulse for the week. Rahul Kumar is late on Vendor contract review. "
         "Meera finished 1 item."
     )
-    assert harness.telegram.ceo_messages[-1] == pulse
+    assert harness.telegram.ceo_messages[-2:] == [pulse, activity]
+    assert activity.startswith("This week I delegated 2 items.")
 
 
 def test_quiet_week(harness: Harness) -> None:

@@ -37,6 +37,7 @@ from app.clock import Clock, utc_now
 from app.config import Settings, get_settings, load_app_config
 from app.db.session import make_engine, make_session_factory
 from app.engine.actions import ActionService
+from app.engine.activity import Activity
 from app.engine.approval import load_policy
 from app.engine.briefing import Briefer
 from app.engine.contacts import load_contacts, seed_delegates
@@ -48,6 +49,7 @@ from app.engine.learning import LearningService
 from app.engine.memory import Memory
 from app.engine.notes import MeetingNotes
 from app.engine.notices import Notices
+from app.engine.permissions import Permissions
 from app.engine.prep import MeetingPrep
 from app.engine.priority import PriorityEngine
 from app.engine.pulse import TeamPulse
@@ -199,6 +201,8 @@ def create_app(
         pulse=TeamPulse(session_factory, tz, clock),
         memory=memory,
         thinking=thinking,
+        activity=Activity(session_factory, clock),
+        permissions=Permissions(session_factory, policy, clock),
     )
     learning = LearningService(session_factory, clock)
     delegation = DelegationService(llm, adapters, notifiers, tz, clock)
@@ -241,6 +245,7 @@ def create_app(
         reminders=reminders,
         pulse=skills.pulse,
         thinking=thinking,
+        activity=skills.activity,
     )
 
     stt = stt or WhisperSTT(app_config.stt)

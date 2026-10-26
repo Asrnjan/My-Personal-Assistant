@@ -16,6 +16,11 @@ confirm:
   - close_task
   - defer
   - drop
+# Run these without asking when everyone involved is on your team (contacts.yaml);
+# anyone outside the team still needs a yes. Choices: send_email, reply_email,
+# teams_message, book_meeting, delegate. You can also say "send emails to my team
+# without asking" or "always ask before emailing".
+auto_when_team: []
 never:
   - payment
   - purchase

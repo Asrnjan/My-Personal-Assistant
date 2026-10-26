@@ -59,6 +59,22 @@ All milestones done.
 - [x] Apps tab: every integration in one place with steps, a link and one or two fields. New `GET/PUT/DELETE /connections/{app}` checks credentials with the service, looks up ids (Asana workspace, ClickUp team and user, Telegram chat, Slack member), stores them encrypted (`app_connections`, migration 0010) and applies them live: the Claude key, task boards and chat channels switch on without a restart or config edit, and Telegram's bot restarts with the new token.
 - [x] Home setup checklist until the device, Claude and email are connected.
 
+### Chief-of-staff features
+
+- [x] Meeting prep before each meeting, and on request
+- [x] Morning brief warns about overlaps, no focus time, late team work, promises due, people waiting
+- [x] Inbox triage with drafted replies
+- [x] Meeting notes to summary, decisions and delegations
+- [x] Block focus time, move meetings (Google and Outlook)
+- [x] Reminders, and promises read from sent mail
+- [x] Automatic follow-ups (re-nudges, check-ins before and after deadlines)
+- [x] Weekly team pulse; waiting-on list
+- [x] Memory, decision support, drafts in the CEO's writing style
+- [x] Weekly activity report with undo; team-only permission levels
+- [ ] Always-on cloud hosting (skipped for now)
+- [ ] Native iPhone app (CarPlay, lock screen); needs a Mac and an Apple developer account
+- [ ] Teams meeting transcripts read automatically (needs the OnlineMeetingTranscript.Read.All permission); today notes are dictated or pasted
+
 ## Open issues
 
 - Adapter fixtures are hand-written from each API's documented response shapes, not recorded from live accounts; refresh them from a real account when one is connected.

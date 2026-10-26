@@ -908,6 +908,12 @@ class ConversationAgent:
         params: dict[str, Any],
     ) -> dict[str, Any]:
         action = self._actions.propose(kind, item_id, readback, params, state.id)
+        permissions = self.skills.permissions
+        if permissions is not None and permissions.allows(kind, params):
+            # The CEO allowed this for their team: no read-back, it just happens.
+            result = self._actions.confirm(action.id, ApprovedVia.AUTO)
+            turn.executed.append(result)
+            return {"status": "done" if result.ok else "failed", "result": result.message}
         turn.created.append(action.id)
         state.awaiting = [*[a for a in state.awaiting if a != action.id], action.id]
         return {"status": "pending", "action_id": action.id, "readback": readback}
@@ -1559,6 +1565,35 @@ class ConversationAgent:
             str(args.get("kind", "") or "note"), str(args.get("brief", "") or turn.text)
         )
         return {"draft": draft}
+
+    def _tool_what_did_you_do(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.activity is None:
+            return {"error": "That isn't available."}
+        done = self.skills.activity.lines(int(args.get("days") or 7))
+        return {"done": done or ["Nothing yet."]}
+
+    def _tool_undo(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.activity is None:
+            return {"error": "That isn't available."}
+        result = self.skills.activity.undo(str(args.get("what", "") or ""))
+        if result.propose is not None:
+            item_id, readback, params = result.propose
+            return self._propose(
+                state, turn, ActionKind.MOVE_MEETING, item_id, readback, dict(params)
+            )
+        return {"status": "undone" if result.done else "not_undone", "message": result.message}
+
+    def _tool_set_permission(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.permissions is None:
+            return {"error": "That isn't available."}
+        kind = ActionKind(str(args.get("action", "")))
+        self.skills.permissions.set(kind, "team" if args.get("mode") == "team" else "ask")
+        return {"status": "saved", "now": self.skills.permissions.describe()}
+
+    def _tool_list_permissions(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.permissions is None:
+            return {"error": "That isn't available."}
+        return {"permissions": self.skills.permissions.describe()}
 
     def _tool_reminder_done(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
         if self.skills.reminders is None:

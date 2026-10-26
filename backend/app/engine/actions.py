@@ -272,7 +272,10 @@ class ActionService:
         if row.kind == ActionKind.CLOSE_TASK:
             return self._close(s, item, via)
         if row.kind == ActionKind.MOVE_MEETING:
-            return self._move(s, item, params, via)
+            moved = dict(params)
+            outcome = self._move(s, item, moved, via)
+            row.params = moved  # a new dict, so the JSON column notices the change
+            return outcome
         if row.kind == ActionKind.DEFER:
             until = date.fromisoformat(str(params["until"]))
             return self._local(
@@ -444,6 +447,8 @@ class ActionService:
             calendar.move_event(item.source_id, start, end)
         except NotImplementedError:
             return _Outcome(False, f"Your calendar can't move {title}.")
+        # Kept so the move can be undone.
+        params.update(previous_start=old["start"], previous_end=old["end"])
         message = f"Moved {title}. The attendees have the new time."
         decision = self._decision(s, item, DecisionAction.DEFER, via, message)
         item.start, item.end = start, end

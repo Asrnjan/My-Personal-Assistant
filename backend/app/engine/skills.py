@@ -9,9 +9,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.config import WorkdayConfig
+from app.engine.activity import Activity
 from app.engine.followup import FollowUpService
 from app.engine.memory import Memory
 from app.engine.notes import MeetingNotes
+from app.engine.permissions import Permissions
 from app.engine.prep import MeetingPrep
 from app.engine.pulse import TeamPulse
 from app.engine.reminders import Reminders
@@ -30,6 +32,8 @@ class Skills:
     followups: FollowUpService | None = None
     memory: Memory | None = None
     thinking: Thinking | None = None
+    activity: Activity | None = None
+    permissions: Permissions | None = None
 
 
 _ITEM_REF_OPTIONAL = {
@@ -210,6 +214,56 @@ SKILL_TOOLS: list[dict[str, Any]] = [
             },
             "required": ["kind", "brief"],
         },
+    },
+    {
+        "name": "what_did_you_do",
+        "description": "Everything you did for the CEO in the last few days, newest first.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"days": {"type": "integer", "minimum": 1, "maximum": 30}},
+        },
+    },
+    {
+        "name": "undo",
+        "description": (
+            "Undo something you did this week, described in the CEO's words (empty for the "
+            "most recent). Some things undo at once, a moved meeting needs a yes, and sent "
+            "messages can't be unsent; say the result as it is."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"what": {"type": "string"}},
+        },
+    },
+    {
+        "name": "set_permission",
+        "description": (
+            "Change whether an action runs without asking when everyone involved is on the "
+            "CEO's team ('team'), or always waits for a yes ('ask'). Anyone outside the team "
+            "always needs a yes."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "send_email",
+                        "reply_email",
+                        "teams_message",
+                        "book_meeting",
+                        "delegate",
+                    ],
+                },
+                "mode": {"type": "string", "enum": ["team", "ask"]},
+            },
+            "required": ["action", "mode"],
+        },
+    },
+    {
+        "name": "list_permissions",
+        "description": "What runs without asking and what always waits for a yes.",
+        "input_schema": {"type": "object", "properties": {}},
     },
     {
         "name": "reminder_done",

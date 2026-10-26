@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import AppConfig
 from app.db.models import BriefRow
 from app.engine.actions import ActionService
+from app.engine.activity import Activity
 from app.engine.briefing import Brief, Briefer, BriefKind
 from app.engine.followup import FollowUpReport, FollowUpService
 from app.engine.notices import Notices
@@ -62,6 +63,7 @@ class AssistantJobs:
         reminders: Reminders | None = None,
         pulse: TeamPulse | None = None,
         thinking: Thinking | None = None,
+        activity: Activity | None = None,
     ) -> None:
         self._sync = sync
         self._briefer = briefer
@@ -74,6 +76,7 @@ class AssistantJobs:
         self._reminders = reminders
         self._pulse = pulse
         self._thinking = thinking
+        self._activity = activity
         # The scheduler thread and a manual /sync must not ingest at the same time.
         self._sync_lock = threading.Lock()
 
@@ -186,6 +189,8 @@ class AssistantJobs:
         texts = []
         if self._pulse is not None:
             texts.append(self._pulse.weekly())
+        if self._activity is not None:
+            texts.append(self._activity.weekly())
         if self._thinking is not None:
             # Writing changes slowly; refreshing the style weekly keeps drafts current.
             self._thinking.learn_style()
