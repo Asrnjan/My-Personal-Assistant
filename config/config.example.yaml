@@ -34,7 +34,8 @@ workday:
 
 models:
   bulk: claude-haiku-5-5          # scoring and classification
-  conversation: claude-sonnet-5-5 # dialogue, delegation briefs, hard calls
+  conversation: claude-haiku-5-5  # spoken back-and-forth: fastest replies
+  reasoning: claude-sonnet-5-5    # decisions, drafting, meeting notes, delegation briefs
   bulk_effort: low                # low | medium | high | xhigh | max
   conversation_effort: low        # low answers fastest; medium thinks longer but is slower
   max_retries: 3                  # SDK retries on 429, 5xx and connection errors

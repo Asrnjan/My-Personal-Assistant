@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time as time_module
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -208,6 +209,13 @@ class ConverseResponse(BaseModel):
     brief: Brief | None = None
     # Accounts to connect (ids from GET /accounts) before the request can be done.
     needs_account: list[str] = []
+    # Files made in this turn (presentations), downloadable from GET /files/{id}.
+    files: list[FileLink] = []
+
+
+class FileLink(BaseModel):
+    id: str
+    name: str
 
 
 @dataclass
@@ -217,6 +225,8 @@ class _Turn:
     # Called with each sentence as soon as it's written (streamed replies), or None.
     say: Callable[[str], None] | None = None
     said: list[str] = field(default_factory=list)
+    first_word_at: float | None = None
+    files: list[FileLink] = field(default_factory=list)
     # What was already spoken of the final answer; the rest is spoken at the end.
     final_said: list[str] = field(default_factory=list)
     created: list[str] = field(default_factory=list)
@@ -573,9 +583,20 @@ class ConversationAgent:
     ) -> ConverseResponse:
         """Answer the CEO. With ``on_say``, sentences are handed over as soon as they're
         written, and the response's ``rest`` is what still has to be spoken."""
+        started = time_module.perf_counter()
         state = self._load(conversation_id)
         state.awaiting = self._still_pending(state.awaiting)
         turn = _Turn(text=spoken_addresses(text.strip()[:2000]), via=via, say=on_say)
+        if on_say is not None:
+            # Log when the first words went out: the delay the CEO actually feels.
+            say = on_say
+
+            def timed(sentence: str) -> None:
+                if turn.first_word_at is None:
+                    turn.first_word_at = time_module.perf_counter()
+                say(sentence)
+
+            turn.say = timed
         if not turn.text:
             reply = "Sorry, I didn't catch that."
         elif self._policy.forbidden_request(turn.text):
@@ -593,6 +614,13 @@ class ConversationAgent:
         ]
         self._save(state)
         pending = self._actions.pending(state.awaiting) if state.awaiting else []
+        took = time_module.perf_counter() - started
+        first = (
+            f", first words after {turn.first_word_at - started:.1f} s"
+            if turn.first_word_at
+            else ""
+        )
+        log.info("conversation turn took %.1f s%s", took, first)
         spoken = " ".join(turn.final_said)
         rest = reply[len(spoken) :].strip() if spoken and reply.startswith(spoken) else reply
         return ConverseResponse(
@@ -604,6 +632,7 @@ class ConversationAgent:
             needs_confirmation=bool(pending),
             brief=turn.brief,
             needs_account=turn.needs_account,
+            files=turn.files,
         )
 
     # -- dialogue rules -----------------------------------------------------------
@@ -816,6 +845,7 @@ class ConversationAgent:
                     max_tokens=1500,
                     tools=tools,
                     on_text=speaker.feed if speaker else None,
+                    on_tool=(lambda name: self._hold_on(turn, name)) if turn.say else None,
                 )
                 if speaker is not None:
                     speaker.flush()
@@ -912,6 +942,15 @@ class ConversationAgent:
             return scored[0][0]
         return f"I couldn't find {ref} on your list."
 
+    def _hold_on(self, turn: _Turn, tool: str) -> None:
+        """Say a few words the moment a slow lookup starts, so a spoken conversation never
+        goes quiet. Once per turn, and only while nothing else has been said."""
+        phrase = _HOLD_ON.get(tool)
+        if phrase is None or turn.said or turn.say is None:
+            return
+        turn.said.append(phrase)
+        turn.say(phrase)
+
     def _run_tool(self, state: _State, turn: _Turn, name: str, args: dict[str, Any]) -> Any:
         try:
             handler = getattr(self, f"_tool_{name}")
@@ -949,6 +988,15 @@ class ConversationAgent:
         readback: str,
         params: dict[str, Any],
     ) -> dict[str, Any]:
+        # A correction ("make it 60 minutes") replaces the earlier proposal for the same
+        # people instead of standing beside it, so one "yes" can't do both.
+        target = _target(kind, item_id, params)
+        for earlier in self._actions.pending(state.awaiting):
+            if earlier.id in turn.created or earlier.kind != kind:
+                continue
+            if _target(kind, earlier.item_id, self._actions.params(earlier.id)) == target:
+                self._actions.cancel(earlier.id, reason="Replaced by a corrected proposal.")
+                state.awaiting = [a for a in state.awaiting if a != earlier.id]
         action = self._actions.propose(kind, item_id, readback, params, state.id)
         permissions = self.skills.permissions
         if permissions is not None and permissions.allows(kind, params):
@@ -1608,6 +1656,23 @@ class ConversationAgent:
         )
         return {"draft": draft}
 
+    def _tool_make_presentation(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.documents is None:
+            return {"error": "Making presentations isn't available."}
+        topic = str(args.get("topic", "")).strip()
+        if not topic:
+            return self._ask(turn, "What should the deck be about?")
+        made = self.skills.documents.presentation(
+            topic, str(args.get("details", "") or ""), int(args.get("slides") or 6)
+        )
+        turn.files.append(FileLink(id=made.id, name=made.name))
+        return {
+            "status": "ready",
+            "file": made.name,
+            "slides": made.slides,
+            "where": "In the app, under your reply, with an Open button.",
+        }
+
     def _tool_what_did_you_do(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
         if self.skills.activity is None:
             return {"error": "That isn't available."}
@@ -1681,6 +1746,33 @@ def _assistant_blocks(response: Message) -> list[dict[str, Any]]:
     and also thinking notes and web search calls and results, which must be passed back."""
     return [b.to_dict() for b in response.content]
 
+
+def _target(kind: ActionKind, item_id: str | None, params: dict[str, Any]) -> tuple[Any, ...]:
+    """Who or what an action is aimed at, to tell a correction from a second request."""
+    if item_id is not None:
+        return (kind, item_id)
+    if kind in (ActionKind.SEND_EMAIL, ActionKind.REPLY_EMAIL):
+        return (kind, tuple(sorted(str(a).lower() for a in params.get("to") or [])))
+    if kind == ActionKind.TEAMS_MESSAGE:
+        return (kind, str(params.get("email") or params.get("chat_id") or "").lower())
+    if kind == ActionKind.BOOK_MEETING:
+        people = tuple(sorted(str(a).lower() for a in params.get("attendees") or []))
+        return (kind, people, str(params.get("start", ""))[:10])
+    return (kind, json.dumps(params, sort_keys=True, default=str))
+
+
+# What to say while a slow lookup runs.
+_HOLD_ON = {
+    "web_search": "Let me look that up.",
+    "search_email": "Let me check your email.",
+    "read_teams": "Let me check Teams.",
+    "triage_inbox": "Going through your inbox.",
+    "prep_meeting": "One moment.",
+    "think_through": "Let me think that through.",
+    "write_draft": "Drafting that now.",
+    "make_presentation": "Building the deck now. It takes about a minute.",
+    "capture_meeting_notes": "Going through your notes.",
+}
 
 # The end of a sentence: punctuation, then a space before more text (so "3.5" isn't one).
 _SENTENCE_END = re.compile(r"[.!?][\"')\]]*\s+(?=\S)")

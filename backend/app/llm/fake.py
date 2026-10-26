@@ -83,13 +83,21 @@ class FakeSender:
     def queue(self, *responses: Message | Responder) -> None:
         self._queue.extend(responses)
 
-    def stream(self, params: dict[str, Any], on_text: Callable[[str], None]) -> Message:
-        """Like ``send``, handing the reply's text over word by word as a stream would."""
+    def stream(
+        self,
+        params: dict[str, Any],
+        on_text: Callable[[str], None],
+        on_tool: Callable[[str], None] | None = None,
+    ) -> Message:
+        """Like ``send``, handing the reply's text over word by word as a stream would,
+        and each tool's name as its call starts."""
         message = self.send(params)
         for block in message.content:
             if block.type == "text":
                 for piece in re.findall(r"\S+\s*", block.text):
                     on_text(piece)
+            elif block.type == "tool_use" and on_tool is not None:
+                on_tool(block.name)
         return message
 
     def send(self, params: dict[str, Any]) -> Message:
@@ -188,6 +196,14 @@ def offline_responder(score: int = 50, band: str = "P2_delegate") -> Responder:
             return fake_message("I'd go ahead, but check the budget first.", model=model)
         if "You write for a CEO in their own voice" in system:
             return fake_message("[draft]", model=model)
+        if "You write presentations for a CEO" in system:
+            found = re.search(r"Topic: (.*)", user)
+            deck_title = (found.group(1) if found else "Update").strip()
+            slide = {"title": "The point", "bullets": ["One", "Two"], "notes": "Say this."}
+            return fake_message(
+                {"title": deck_title, "subtitle": "Prepared by Atlas", "slides": [slide, slide]},
+                model=model,
+            )
         if params.get("tools"):
             return fake_message(
                 "I'm running offline, so I can only handle brief me, yes, cancel and skip.",

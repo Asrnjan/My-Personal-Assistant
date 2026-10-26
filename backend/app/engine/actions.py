@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, time, tzinfo
+from datetime import date, datetime, time, timedelta, tzinfo
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +41,15 @@ from app.integrations.base import NewEvent, OutboundEmail
 log = logging.getLogger(__name__)
 
 DEFAULT_DECLINE_NOTE = "Thanks for the invite. I can't make this one."
+# The same email, message or booking executed again within this window is skipped.
+DUPLICATE_WINDOW = timedelta(minutes=30)
+# Fields that say what an action does; bookkeeping like the title shown in the app is ignored.
+_SUBSTANCE = ("to", "subject", "text", "email", "chat_id", "start", "end", "attendees")
+
+
+def _same(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    return all(a.get(k) == b.get(k) for k in _SUBSTANCE)
+
 
 DecisionHook = Callable[[Session, ItemRow, PendingActionRow], None]
 
@@ -198,7 +207,12 @@ class ActionService:
 
     # -- resolving ---------------------------------------------------------------
 
-    def cancel(self, action_id: str) -> PendingAction:
+    def params(self, action_id: str) -> dict[str, Any]:
+        with self._sessions() as s:
+            row = s.get(PendingActionRow, action_id)
+            return dict(row.params or {}) if row is not None else {}
+
+    def cancel(self, action_id: str, reason: str = "Cancelled.") -> PendingAction:
         with self._sessions.begin() as s:
             row = s.get(PendingActionRow, action_id)
             if row is None:
@@ -206,7 +220,7 @@ class ActionService:
             if row.status == ActionStatus.PENDING:
                 row.status = ActionStatus.CANCELLED
                 row.resolved_at = self._clock()
-                row.result = "Cancelled."
+                row.result = reason
                 audit(
                     s,
                     f"action.{row.kind.value}",
@@ -230,6 +244,14 @@ class ActionService:
             item = s.get(ItemRow, row.item_id) if row.item_id else None
             if item is None and row.kind not in FREE_KINDS:  # pragma: no cover - foreign key
                 raise ActionError("item not found")
+            twin = self._just_done(s, row)
+            if twin is not None:
+                # The very same email or booking already went out: never do it twice.
+                row.status = ActionStatus.CANCELLED
+                row.resolved_at = self._clock()
+                row.result = "Already done a moment ago, so I didn't do it again."
+                audit(s, f"action.{row.kind.value}", "duplicate", target=row.id, twin=twin.id)
+                return ActionResult(action_id=row.id, ok=True, message=row.result)
             try:
                 if item is None:
                     outcome = self._execute_free(s, row)
@@ -245,6 +267,23 @@ class ActionService:
             if outcome.ok and item is not None and self._on_decision is not None:
                 self._on_decision(s, item, row)
             return ActionResult(action_id=row.id, ok=outcome.ok, message=outcome.message)
+
+    def _just_done(self, s: Session, row: PendingActionRow) -> PendingActionRow | None:
+        """An identical external action executed in the last half hour, if there is one."""
+        if row.kind not in FREE_KINDS:
+            return None
+        since = self._clock() - DUPLICATE_WINDOW
+        for done in s.scalars(
+            select(PendingActionRow).where(
+                PendingActionRow.kind == row.kind,
+                PendingActionRow.status == ActionStatus.EXECUTED,
+                PendingActionRow.resolved_at >= since,
+                PendingActionRow.id != row.id,
+            )
+        ):
+            if _same(done.params or {}, row.params or {}):
+                return done
+        return None
 
     def confirm_many(self, ids: Sequence[str], via: ApprovedVia) -> list[ActionResult]:
         return [self.confirm(i, via) for i in ids]

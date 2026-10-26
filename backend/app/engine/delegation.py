@@ -369,7 +369,7 @@ class DelegationService:
         )
         try:
             brief = self._llm.structured(
-                Task.CONVERSATION,
+                Task.REASONING,
                 "delegation.brief",
                 system=[load_prompt("delegation").text],
                 user=user,

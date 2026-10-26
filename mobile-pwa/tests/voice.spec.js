@@ -312,3 +312,26 @@ test('an assistant without streaming is asked the plain way', async ({ page }) =
   await expect.poll(() => page.evaluate(() => window.__spoken)).toContain('Here you go.');
   expect(calls.filter((c) => c.path === '/converse')).toHaveLength(1);
 });
+
+test('a deck Atlas made can be opened from the reply', async ({ page }) => {
+  const { calls } = await setup(page, {
+    overrides: {
+      'POST /converse': () => ({
+        json: converseReply('Your deck is ready, 6 slides.', { files: [{ id: 'f'.repeat(32), name: 'Sattva pitch.pptx' }] }),
+      }),
+      [`GET /files/${'f'.repeat(32)}`]: () => ({
+        contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        body: 'PK-fake-deck',
+      }),
+    },
+  });
+  await page.goto('/');
+  await page.locator('#text-input').fill('Make me a deck for the Sattva pitch');
+  await page.locator('#text-input').press('Enter');
+  const open = page.getByRole('button', { name: 'Open Sattva pitch.pptx' });
+  await expect(open).toBeVisible();
+  const download = page.waitForEvent('download');
+  await open.click();
+  expect((await download).suggestedFilename()).toBe('Sattva pitch.pptx');
+  expect(findCalls(calls, 'GET', `/files/${'f'.repeat(32)}`)[0].headers.authorization).toBe('Bearer test-token-123');
+});

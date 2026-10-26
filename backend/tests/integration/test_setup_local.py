@@ -38,3 +38,19 @@ def test_old_speech_model_default_is_moved_to_base_en(tmp_path: Path) -> None:
     assert "model_size: base.en\n" in config.read_text(encoding="utf-8")
     config.write_text("stt:\n  model_size: small.en\n", encoding="utf-8")
     assert setup["speed_up_config"](config) is False
+
+
+def test_conversation_moves_to_the_fast_model_keeping_line_endings(tmp_path: Path) -> None:
+    setup = runpy.run_path(str(SCRIPTS / "setup_local.py"))
+    config = tmp_path / "config.yaml"
+    config.write_bytes(
+        b"models:\r\n  conversation: claude-sonnet-5-5 # dialogue, delegation briefs\r\n"
+        b"  bulk: claude-haiku-5-5\r\n"
+    )
+    assert setup["speed_up_config"](config) is True
+    assert config.read_bytes() == (
+        b"models:\r\n  conversation: claude-haiku-5-5  # spoken back-and-forth: fastest replies"
+        b"\r\n  bulk: claude-haiku-5-5\r\n"
+    )
+    config.write_text("models:\n  conversation: claude-opus-5-5\n", encoding="utf-8")
+    assert setup["speed_up_config"](config) is False

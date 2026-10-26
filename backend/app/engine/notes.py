@@ -43,7 +43,7 @@ class MeetingNotes:
         if meeting:
             header += f" The meeting: {meeting}."
         return self._llm.structured(
-            Task.CONVERSATION,
+            Task.REASONING,
             "meeting_notes",
             system=[load_prompt("notes").text],
             user=header + "\n" + untrusted("meeting notes", notes[:MAX_NOTES_CHARS]),

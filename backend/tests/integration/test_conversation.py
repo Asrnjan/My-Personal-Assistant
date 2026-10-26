@@ -165,7 +165,7 @@ def test_delegate_via_model_readback_then_confirm(harness: Harness) -> None:
     assert first["reply"] == READBACK
     assert first["needs_confirmation"] is True
     request = harness.sender.calls[-2]
-    assert request["model"] == "claude-sonnet-5-5"
+    assert request["model"] == "claude-haiku-5-5"  # the fast conversation model
     assert [t["name"] for t in request["tools"]][:3] == [
         "list_items",
         "get_item",

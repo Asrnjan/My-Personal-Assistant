@@ -15,7 +15,8 @@ def test_example_config_loads() -> None:
     assert cfg.brief_times.morning == time(8, 0)
     assert cfg.brief_times.evening == time(18, 30)
     assert cfg.models.bulk == "claude-haiku-5-5"
-    assert cfg.models.conversation == "claude-sonnet-5-5"
+    assert cfg.models.conversation == "claude-haiku-5-5"
+    assert cfg.models.reasoning == "claude-sonnet-5-5"
     assert cfg.tz.key == "Asia/Kolkata"
 
 

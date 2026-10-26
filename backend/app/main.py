@@ -23,6 +23,7 @@ from app.api import (
     routes_brief,
     routes_connections,
     routes_converse,
+    routes_files,
     routes_health,
     routes_items,
     routes_oauth,
@@ -43,6 +44,7 @@ from app.engine.briefing import Briefer
 from app.engine.contacts import load_contacts, seed_delegates
 from app.engine.conversation import ConversationAgent
 from app.engine.delegation import DelegationService
+from app.engine.documents import Documents
 from app.engine.followup import FollowUpService
 from app.engine.insights import day_insights
 from app.engine.learning import LearningService
@@ -202,6 +204,7 @@ def create_app(
         memory=memory,
         thinking=thinking,
         activity=Activity(session_factory, clock),
+        documents=Documents(session_factory, llm, settings.files_dir, clock, memory),
         permissions=Permissions(session_factory, policy, clock),
     )
     learning = LearningService(session_factory, clock)
@@ -371,6 +374,7 @@ def create_app(
     app.include_router(routes_items.router)
     app.include_router(routes_brief.router)
     app.include_router(routes_converse.router)
+    app.include_router(routes_files.router)
     app.include_router(routes_people.router)
     app.include_router(routes_voice.router)
     app.include_router(routes_push.router)
