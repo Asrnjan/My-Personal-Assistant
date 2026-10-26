@@ -66,16 +66,54 @@ class Promises(BaseModel):
     promises: list[Promise]
 
 
+SlideLayout = Literal[
+    "bullets", "two_column", "big_numbers", "process", "timeline", "quote", "section"
+]
+
+
+class Stat(BaseModel):
+    value: str = Field(description="The number, short: '38%', '₹2.4 Cr', '3x', '[Q3 revenue]'.")
+    label: str = Field(description="What it measures, a few words.")
+
+
+class Step(BaseModel):
+    title: str = Field(description="Two to four words.")
+    text: str = Field(description="One short line.")
+
+
 class Slide(BaseModel):
-    title: str = Field(description="A short headline, ideally the slide's takeaway.")
-    bullets: list[str] = Field(description="Two to five short points, no full stops.")
-    notes: str = Field(description="What the CEO says on this slide, two or three sentences.")
+    layout: SlideLayout = Field(
+        description=(
+            "bullets: a point and its support. two_column: compare or contrast two sides. "
+            "big_numbers: two to four headline figures. process: three to five steps in "
+            "order. timeline: three to five dated milestones. quote: one strong quote. "
+            "section: a divider before a new part of the story."
+        )
+    )
+    kicker: str = Field(description="One to three words above the title, e.g. 'The problem'.")
+    title: str = Field(description="The slide's takeaway as a short headline.")
+    bullets: list[str] = Field(description="bullets: two to five short points, no full stops.")
+    left_heading: str = Field(description="two_column only: the left side's heading.")
+    left_points: list[str] = Field(description="two_column only: two to four points.")
+    right_heading: str = Field(description="two_column only: the right side's heading.")
+    right_points: list[str] = Field(description="two_column only: two to four points.")
+    stats: list[Stat] = Field(description="big_numbers only: two to four figures.")
+    steps: list[Step] = Field(description="process or timeline only: three to five steps.")
+    quote: str = Field(description="quote only: the quote itself.")
+    attribution: str = Field(description="quote only: who said it.")
+    notes: str = Field(description="What the presenter says on this slide, two or three sentences.")
 
 
 class DeckOutline(BaseModel):
-    title: str
-    subtitle: str
+    title: str = Field(description="The deck's title, as it appears on the cover.")
+    subtitle: str = Field(description="One line under the title for the audience, e.g. the offer.")
+    presenter: str = Field(description="Who presents and for whom, e.g. 'Ashish · Sattva Group'.")
+    accent_color: str | None = Field(
+        description="The client's or company's brand colour as #RRGGBB if known, else null."
+    )
     slides: list[Slide]
+    closing_title: str = Field(description="The last slide's headline: the ask or next step.")
+    closing_points: list[str] = Field(description="Two to four concrete next steps.")
 
 
 class AckClassification(BaseModel):
