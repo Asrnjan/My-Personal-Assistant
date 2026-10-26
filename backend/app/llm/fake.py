@@ -83,6 +83,15 @@ class FakeSender:
     def queue(self, *responses: Message | Responder) -> None:
         self._queue.extend(responses)
 
+    def stream(self, params: dict[str, Any], on_text: Callable[[str], None]) -> Message:
+        """Like ``send``, handing the reply's text over word by word as a stream would."""
+        message = self.send(params)
+        for block in message.content:
+            if block.type == "text":
+                for piece in re.findall(r"\S+\s*", block.text):
+                    on_text(piece)
+        return message
+
     def send(self, params: dict[str, Any]) -> Message:
         self.calls.append(params)
         if self._queue:

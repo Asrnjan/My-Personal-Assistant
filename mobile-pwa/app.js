@@ -522,6 +522,19 @@ async function speak(text) {
   return ok;
 }
 
+// Streamed replies arrive a sentence at a time; each is spoken after the one before it.
+// Resolves true when everything queued so far was heard. stopSpeaking() drops the queue.
+function speakQueued(text) {
+  const token = state.speakToken;
+  state.sayQueue = (state.sayQueue || Promise.resolve(true)).then(async (heardSoFar) => {
+    if (!text || token !== state.speakToken) return heardSoFar;
+    let ok = await speakWithSynthesis(text, token);
+    if (!ok && token === state.speakToken) ok = await speakWithServer(text, token);
+    return heardSoFar && ok;
+  });
+  return state.sayQueue;
+}
+
 // iPhones only let a page speak once speech has been started inside a tap (when the finger
 // lifts, not when it lands). The reply comes
 // seconds after the tap that asked for it, so the first tap also speaks a silent utterance,
@@ -1117,11 +1130,55 @@ function renderTranscript() {
   $('transcript-empty').hidden = turns.length > 0;
 }
 
-async function converse(text) {
+async function converse(text, onSay = null) {
   const conversationId = sessionStorage.getItem(STORAGE.conversation) || null;
-  const data = await api('/converse', { method: 'POST', body: { text, conversation_id: conversationId } });
+  const body = { text, conversation_id: conversationId };
+  let data = null;
+  if (onSay) {
+    try {
+      data = await converseStream(body, onSay);
+    } catch (err) {
+      // An older assistant without streaming: ask the plain way.
+      if (!(err instanceof ApiError && (err.status === 404 || err.status === 405))) throw err;
+    }
+  }
+  if (!data) data = await api('/converse', { method: 'POST', body });
   if (data && data.conversation_id) sessionStorage.setItem(STORAGE.conversation, data.conversation_id);
   return data;
+}
+
+// The answer as newline-delimited JSON: a "say" line per finished sentence (spoken at once,
+// while the rest is still being written), then a "done" line with the whole response.
+async function converseStream(body, onSay) {
+  const res = await api('/converse/stream', { method: 'POST', body, raw: true });
+  let done = null;
+  const handle = (line) => {
+    if (!line.trim()) return;
+    const event = JSON.parse(line);
+    if (event.type === 'say') onSay(event.text);
+    else if (event.type === 'done') done = event;
+    else if (event.type === 'error') throw new ApiError(500, event.detail || 'Something went wrong.');
+  };
+  if (res.body && typeof res.body.getReader === 'function') {
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done: ended } = await reader.read();
+      if (value) buffer += decoder.decode(value, { stream: true });
+      let newline;
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        handle(buffer.slice(0, newline));
+        buffer = buffer.slice(newline + 1);
+      }
+      if (ended) break;
+    }
+    handle(buffer);
+  } else {
+    (await res.text()).split('\n').forEach(handle);
+  }
+  if (!done) throw new ApiError(0, 'The answer was cut off. Try again.');
+  return done;
 }
 
 function showReply(text) {
@@ -1199,18 +1256,34 @@ async function sendText(text, opts = {}) {
   if (cluster) cluster.pulse(0.6);
   setOrb('thinking');
   setCaption('');
+  state.sayQueue = Promise.resolve(true);
+  const token = state.speakToken;
+  let heard = '';
+  // Each sentence is spoken as soon as it arrives, while the rest is still being written.
+  const onSay = speakReply ? (sentence) => {
+    heard = `${heard} ${sentence}`.trim();
+    showReply(heard);
+    speakQueued(sentence);
+  } : null;
   let data;
   try {
-    data = await converse(text);
+    data = await converse(text, onSay);
   } catch (err) {
+    stopSpeaking();
     setOrb('idle');
     toast(err.message, { variant: 'error', title: 'Assistant' });
     return true;
   }
   handleConverseResponse(data);
-  setOrb('idle');
-  if (!speakReply || !data || !data.reply) return true;
-  const ok = await speak(data.reply);
+  if (!speakReply || !data || !data.reply) {
+    setOrb('idle');
+    return true;
+  }
+  // Whatever wasn't streamed (a read-back, a quick answer) is spoken after what was.
+  const rest = typeof data.rest === 'string' ? data.rest : data.reply;
+  if (rest) speakQueued(rest);
+  const ok = await state.sayQueue;
+  if (token === state.speakToken && (state.orb === 'speaking' || state.orb === 'thinking')) setOrb('idle');
   // A tap is enough to play it, even where the browser blocked speaking on its own.
   if (!ok && opts.source === 'voice') showTapToHear(data.reply, 'Tap to hear the answer');
   if (ok && opts.source === 'voice' && keepListeningOn() && !END_CONVERSATION.test(text)) {

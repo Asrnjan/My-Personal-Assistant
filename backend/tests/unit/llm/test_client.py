@@ -220,3 +220,31 @@ def test_other_type_errors_are_not_hidden(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr("app.llm.client.anthropic.Anthropic", Broken)
     with pytest.raises(TypeError):
         AnthropicSender("k", max_retries=0).send({"model": "m"})
+
+
+def test_sender_streams_text_as_it_arrives(monkeypatch: pytest.MonkeyPatch) -> None:
+    final = fake_message("Hello there.")
+
+    class Stream:
+        text_stream = iter(["Hello ", "there."])
+
+        def __enter__(self) -> Stream:
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+        def get_final_message(self) -> object:
+            return final
+
+    class Streaming:
+        def __init__(self, **_kwargs: object) -> None:
+            self.messages = self
+
+        def stream(self, **_params: object) -> Stream:
+            return Stream()
+
+    monkeypatch.setattr("app.llm.client.anthropic.Anthropic", Streaming)
+    pieces: list[str] = []
+    assert AnthropicSender("k", max_retries=0).stream({"model": "m"}, pieces.append) is final
+    assert pieces == ["Hello ", "there."]

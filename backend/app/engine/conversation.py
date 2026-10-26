@@ -199,6 +199,8 @@ def _with_readbacks(reply: str, readbacks: list[str]) -> str:
 
 class ConverseResponse(BaseModel):
     conversation_id: str
+    # The part of ``reply`` not yet spoken while streaming (all of it otherwise).
+    rest: str = ""
     reply: str
     pending_actions: list[PendingAction]
     executed: list[ActionResult]
@@ -212,6 +214,11 @@ class ConverseResponse(BaseModel):
 class _Turn:
     text: str
     via: ApprovedVia
+    # Called with each sentence as soon as it's written (streamed replies), or None.
+    say: Callable[[str], None] | None = None
+    said: list[str] = field(default_factory=list)
+    # What was already spoken of the final answer; the rest is spoken at the end.
+    final_said: list[str] = field(default_factory=list)
     created: list[str] = field(default_factory=list)
     executed: list[ActionResult] = field(default_factory=list)
     questions: list[str] = field(default_factory=list)
@@ -557,11 +564,18 @@ class ConversationAgent:
     # -- entry point ------------------------------------------------------------
 
     def converse(
-        self, text: str, conversation_id: str | None = None, via: ApprovedVia = ApprovedVia.VOICE
+        self,
+        text: str,
+        conversation_id: str | None = None,
+        via: ApprovedVia = ApprovedVia.VOICE,
+        *,
+        on_say: Callable[[str], None] | None = None,
     ) -> ConverseResponse:
+        """Answer the CEO. With ``on_say``, sentences are handed over as soon as they're
+        written, and the response's ``rest`` is what still has to be spoken."""
         state = self._load(conversation_id)
         state.awaiting = self._still_pending(state.awaiting)
-        turn = _Turn(text=spoken_addresses(text.strip()[:2000]), via=via)
+        turn = _Turn(text=spoken_addresses(text.strip()[:2000]), via=via, say=on_say)
         if not turn.text:
             reply = "Sorry, I didn't catch that."
         elif self._policy.forbidden_request(turn.text):
@@ -579,9 +593,12 @@ class ConversationAgent:
         ]
         self._save(state)
         pending = self._actions.pending(state.awaiting) if state.awaiting else []
+        spoken = " ".join(turn.final_said)
+        rest = reply[len(spoken) :].strip() if spoken and reply.startswith(spoken) else reply
         return ConverseResponse(
             conversation_id=state.id,
             reply=reply,
+            rest=rest,
             pending_actions=pending,
             executed=turn.executed,
             needs_confirmation=bool(pending),
@@ -780,20 +797,39 @@ class ConversationAgent:
             {"role": "user", "content": f"{self._context(state)}\n\nThe CEO said: {turn.text}"}
         )
         system = self._system()
+        tools: list[dict[str, Any]] = [*TOOLS, *SKILL_TOOLS]
+        web = self._llm.web_search_tool(Task.CONVERSATION, getattr(self._tz, "key", None))
+        if web is not None:
+            tools.append(web)
         texts: list[str] = []
+        carried: list[str] = []  # text from a turn the server paused (long web searches)
         try:
             for _ in range(MAX_TOOL_ROUNDS):
+                # Speak as it streams, except once something awaits a yes: its read-back
+                # must be heard exactly, so that reply is spoken when complete.
+                speaker = _Speaker(turn.say) if turn.say and not turn.created else None
                 response = self._llm.call(
                     Task.CONVERSATION,
                     "conversation",
                     system=system,
                     messages=messages,
                     max_tokens=1500,
-                    tools=[*TOOLS, *SKILL_TOOLS],
+                    tools=tools,
+                    on_text=speaker.feed if speaker else None,
                 )
-                texts = [b.text for b in response.content if b.type == "text"]
+                if speaker is not None:
+                    speaker.flush()
+                    turn.said += speaker.said
+                texts = [*carried, *(b.text for b in response.content if b.type == "text")]
+                if response.stop_reason == "pause_turn":
+                    # The server stopped a long search midway; send the turn back to resume.
+                    messages.append({"role": "assistant", "content": _assistant_blocks(response)})
+                    carried = texts
+                    continue
+                carried = []
                 uses = [b for b in response.content if b.type == "tool_use"]
                 if not uses:
+                    turn.final_said = speaker.said if speaker else []
                     break
                 messages.append({"role": "assistant", "content": _assistant_blocks(response)})
                 results = []
@@ -1641,13 +1677,38 @@ class ConversationAgent:
 
 
 def _assistant_blocks(response: Message) -> list[dict[str, Any]]:
-    blocks: list[dict[str, Any]] = []
-    for b in response.content:
-        if b.type == "text":
-            blocks.append({"type": "text", "text": b.text})
-        elif b.type == "tool_use":
-            blocks.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
-    return blocks
+    """The assistant turn exactly as it came back, for the next request: text, tool calls,
+    and also thinking notes and web search calls and results, which must be passed back."""
+    return [b.to_dict() for b in response.content]
+
+
+# The end of a sentence: punctuation, then a space before more text (so "3.5" isn't one).
+_SENTENCE_END = re.compile(r"[.!?][\"')\]]*\s+(?=\S)")
+
+
+class _Speaker:
+    """Cuts streamed text into sentences and hands each one on as soon as it's complete."""
+
+    def __init__(self, say: Callable[[str], None]) -> None:
+        self._say = say
+        self._buffer = ""
+        self.said: list[str] = []
+
+    def feed(self, text: str) -> None:
+        self._buffer += text
+        while match := _SENTENCE_END.search(self._buffer):
+            sentence, self._buffer = self._buffer[: match.end()], self._buffer[match.end() :]
+            self._emit(sentence)
+
+    def flush(self) -> None:
+        self._emit(self._buffer)
+        self._buffer = ""
+
+    def _emit(self, text: str) -> None:
+        spoken = spoken_reply(text)
+        if spoken:
+            self.said.append(spoken)
+            self._say(spoken)
 
 
 __all__ = ["TOOLS", "ConversationAgent", "ConverseResponse", "is_affirmation", "spoken_reply"]
