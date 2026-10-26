@@ -58,6 +58,7 @@ The brief also warns you about meetings that overlap, a day with no free block f
 | "Remember that Acme's renewal is in March" | Remembered and used in prep, decisions and drafts; "forget that..." removes it |
 | "Should I hire a second sales lead?" | A recommendation, pros and cons, the main risk, and what to find out first, from your own context |
 | "Draft a LinkedIn post about our Pune office" | A draft in your writing style (learned from your sent mail) |
+| "What's the latest on Tata Motors?" / "What's the weather in Mumbai?" | A web search, answered in a few sentences with the source named. Turn it off with `models.web_search: false` in `config/config.yaml` |
 | "What did you do this week?" / "Undo that" | Everything it did; undo reopens items, reverts team changes, or moves a meeting back after a yes. Sent messages can't be unsent. |
 | "Send emails to my team without asking" | Emails to people on your team go straight away; anyone else still needs your yes. "Always ask before emailing" switches it back. Works for emails, replies, Teams messages, meetings and delegations. |
 

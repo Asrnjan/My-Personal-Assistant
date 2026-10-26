@@ -76,6 +76,12 @@ class ModelsConfig(_Strict):
     max_retries: int = Field(default=3, ge=0, le=10)
     # Re-run a refused conversation request on a fallback model (server-side, Claude API).
     refusal_fallback: bool = True
+    # Quick spoken replies: no extended thinking in conversation where the model allows it
+    # (Claude Sonnet 5.5's "between_tools"); other models keep adaptive thinking.
+    fast_replies: bool = True
+    # Let the conversation search the web for news, facts, companies and people.
+    web_search: bool = True
+    web_searches_per_turn: int = Field(default=3, ge=1, le=10)
 
 
 class BudgetConfig(_Strict):

@@ -9,9 +9,10 @@ All calls go through :class:`LLMClient`. The network is behind the
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from enum import StrEnum
-from typing import Any, Protocol, TypeVar
+from typing import Any, Protocol, TypeVar, cast
 
 import anthropic
 from anthropic.types import Message, MessageParam
@@ -45,6 +46,9 @@ class Task(StrEnum):
     CONVERSATION = "conversation"  # dialogue, delegation briefs, hard judgment calls
 
 
+TextHandler = Callable[[str], None]
+
+
 class MessageSender(Protocol):
     def send(self, params: dict[str, Any]) -> Message: ...
 
@@ -63,23 +67,54 @@ class AnthropicSender:
         self._api_key = api_key or None
         self._client = None
 
-    def send(self, params: dict[str, Any]) -> Message:
+    def _ensure_client(self) -> anthropic.Anthropic:
         if self._client is None:
             # Created lazily so the app starts without credentials; the SDK
             # falls back to ANTHROPIC_API_KEY or an `ant auth login` profile.
             self._client = anthropic.Anthropic(api_key=self._api_key, max_retries=self._max_retries)
-        try:
-            response: Message = self._client.messages.create(**params)
-        except TypeError as exc:
-            # The SDK raises this before sending when it finds no credentials at all.
-            if "authentication" not in str(exc).lower():
-                raise
-            raise LLMAuthError("no Claude API key is set") from exc
-        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as exc:
-            raise LLMAuthError("the Claude API key was rejected") from exc
-        except anthropic.APIError as exc:
-            raise LLMUnavailableError(f"Claude API error: {exc}") from exc
+        return self._client
+
+    def send(self, params: dict[str, Any]) -> Message:
+        with _api_errors():
+            response: Message = self._ensure_client().messages.create(**params)
         return response
+
+    def stream(self, params: dict[str, Any], on_text: TextHandler) -> Message:
+        """Like ``send``, calling ``on_text`` with each piece of text as it streams in."""
+        with _api_errors(), self._ensure_client().messages.stream(**params) as stream:
+            for text in stream.text_stream:
+                on_text(text)
+            final = stream.get_final_message()
+        return cast(Message, final)
+
+
+@contextmanager
+def _api_errors() -> Iterator[None]:
+    """Turn the SDK's errors into LLM errors, so every caller's fallback applies."""
+    try:
+        yield
+    except TypeError as exc:
+        # The SDK raises this before sending when it finds no credentials at all.
+        if "authentication" not in str(exc).lower():
+            raise
+        raise LLMAuthError("no Claude API key is set") from exc
+    except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as exc:
+        raise LLMAuthError("the Claude API key was rejected") from exc
+    except anthropic.APIError as exc:
+        raise LLMUnavailableError(f"Claude API error: {exc}") from exc
+
+
+# Models that accept thinking "between_tools" (thinking off except short progress notes).
+_BETWEEN_TOOLS_MODELS = frozenset({"claude-sonnet-5-5"})
+# Models with the web search tool that filters results with code (newer variant).
+_DYNAMIC_WEB_SEARCH_MODELS = (
+    "claude-opus-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-5",
+    "claude-sonnet-4-6",
+)
 
 
 class LLMClient:
@@ -94,6 +129,21 @@ class LLMClient:
         self._models = models
         self._ledger = ledger
         self._budget = budget
+
+    def web_search_tool(self, task: Task, timezone: str | None = None) -> dict[str, Any] | None:
+        """The server-side web search tool for this task's model, or None when it's off."""
+        if not self._models.web_search:
+            return None
+        model = self.model_for(task)
+        newer = model.startswith(_DYNAMIC_WEB_SEARCH_MODELS)
+        tool: dict[str, Any] = {
+            "type": "web_search_20260209" if newer else "web_search_20250305",
+            "name": "web_search",
+            "max_uses": self._models.web_searches_per_turn,
+        }
+        if timezone:
+            tool["user_location"] = {"type": "approximate", "timezone": timezone}
+        return tool
 
     def model_for(self, task: Task) -> str:
         return self._models.bulk if task is Task.BULK else self._models.conversation
@@ -135,6 +185,14 @@ class LLMClient:
             "messages": list(messages),
             "output_config": output_config,
         }
+        if (
+            task is Task.CONVERSATION
+            and self._models.fast_replies
+            and model in _BETWEEN_TOOLS_MODELS
+            and output_config["effort"] in ("low", "medium", "high")
+        ):
+            # No extended thinking before answering: the biggest single cut in reply time.
+            params["thinking"] = {"type": "between_tools"}
         if tools:
             params["tools"] = list(tools)
         if (
@@ -157,6 +215,7 @@ class LLMClient:
         output_schema: dict[str, Any] | None = None,
         tools: Sequence[dict[str, Any]] | None = None,
         effort: str | None = None,
+        on_text: TextHandler | None = None,
     ) -> Message:
         """Send one request. Raises ``BudgetExceededError`` before sending when
         the monthly cap is reached, and ``LLMRefusalError`` / ``LLMTruncatedError``
@@ -171,7 +230,12 @@ class LLMClient:
             tools=tools,
             effort=effort,
         )
-        response = self._sender.send(params)
+        stream = getattr(self._sender, "stream", None)
+        if on_text is not None and stream is not None:
+            # Text arrives as it is written, so a voice reply can start before it's done.
+            response = cast(Message, stream(params, on_text))
+        else:
+            response = self._sender.send(params)
         usage = response.usage
         self._ledger.record(
             model=response.model or params["model"],

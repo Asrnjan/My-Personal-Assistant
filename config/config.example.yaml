@@ -39,6 +39,9 @@ models:
   conversation_effort: low        # low answers fastest; medium thinks longer but is slower
   max_retries: 3                  # SDK retries on 429, 5xx and connection errors
   refusal_fallback: true          # retry a refused conversation call on a fallback model
+  fast_replies: true              # no extended thinking in conversation, for quick replies
+  web_search: true                # answer questions with a web search when needed
+  web_searches_per_turn: 3
 
 budget:
   monthly_usd: 20.0 # above this, scoring falls back to rules only

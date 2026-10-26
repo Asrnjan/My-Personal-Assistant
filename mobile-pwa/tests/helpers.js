@@ -188,6 +188,19 @@ async function mockApi(page, overrides = {}) {
 
     const exact = `${call.method} ${call.path}`;
     let handler = overrides[exact] ?? defaults[exact];
+    if (handler === undefined && exact === 'POST /converse/stream') {
+      // Streams what the /converse mock answers: optional `say` sentences, then "done".
+      const plain = overrides['POST /converse'] ?? defaults['POST /converse'];
+      handler = async (c) => {
+        const out = typeof plain === 'function' ? await plain(c) : { json: plain };
+        if (out.status && out.status !== 200) return out;
+        const { say = [], ...reply } = out.json;
+        const spoken = say.join(' ');
+        const rest = reply.rest ?? (spoken && reply.reply.startsWith(spoken) ? reply.reply.slice(spoken.length).trim() : reply.reply);
+        const lines = [...say.map((text) => ({ type: 'say', text })), { type: 'done', ...reply, rest }];
+        return { contentType: 'application/x-ndjson', body: lines.map((l) => JSON.stringify(l)).join('\n') + '\n' };
+      };
+    }
     if (handler === undefined) {
       const actionMatch = call.path.match(/^\/actions\/([^/]+)\/(confirm|cancel)$/);
       if (actionMatch && call.method === 'POST') {
@@ -404,7 +417,9 @@ async function setup(page, { overrides = {}, speech = {}, token = true } = {}) {
 }
 
 function findCalls(calls, method, path) {
-  return calls.filter((c) => c.method === method && c.path === path);
+  // A streamed conversation turn counts as a /converse call.
+  const paths = path === '/converse' ? [path, '/converse/stream'] : [path];
+  return calls.filter((c) => c.method === method && paths.includes(c.path));
 }
 
 module.exports = {

@@ -273,3 +273,42 @@ test('a spoken answer the browser refuses to play is one tap away', async ({ pag
   await prompt.click();
   await expect.poll(() => page.evaluate(() => window.__spoken)).toContain(REPLY);
 });
+
+test('a streamed answer is spoken sentence by sentence, then the rest', async ({ page }) => {
+  const { calls } = await setup(page, {
+    overrides: {
+      'POST /converse': () => ({
+        json: converseReply('Acme grew 12 percent. According to Reuters. Shall I email Rahul? Confirm?', {
+          say: ['Acme grew 12 percent.', 'According to Reuters.'],
+        }),
+      }),
+    },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
+  await page.evaluate(() => window.__recognitions[0].__say('How did Acme do?'));
+
+  await expect.poll(() => page.evaluate(() => window.__spoken)).toEqual([
+    'Acme grew 12 percent.',
+    'According to Reuters.',
+    'Shall I email Rahul? Confirm?',
+  ]);
+  expect(calls.some((c) => c.path === '/converse/stream')).toBe(true);
+  await expect(page.locator('#transcript .turn-assistant')).toHaveText(/Shall I email Rahul/);
+});
+
+test('an assistant without streaming is asked the plain way', async ({ page }) => {
+  const { calls } = await setup(page, {
+    overrides: {
+      'POST /converse/stream': () => ({ status: 404, json: { detail: 'Not Found' } }),
+      'POST /converse': () => ({ json: converseReply('Here you go.') }),
+    },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start talking' }).click();
+  await expect.poll(() => page.evaluate(() => window.__recognitions.length && window.__recognitions[0].started)).toBe(true);
+  await page.evaluate(() => window.__recognitions[0].__say('Anything new?'));
+  await expect.poll(() => page.evaluate(() => window.__spoken)).toContain('Here you go.');
+  expect(calls.filter((c) => c.path === '/converse')).toHaveLength(1);
+});
