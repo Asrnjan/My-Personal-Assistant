@@ -41,11 +41,15 @@ from app.engine.contacts import load_contacts, seed_delegates
 from app.engine.conversation import ConversationAgent
 from app.engine.delegation import DelegationService
 from app.engine.followup import FollowUpService
+from app.engine.insights import day_insights
 from app.engine.learning import LearningService
 from app.engine.notices import Notices
+from app.engine.prep import MeetingPrep
 from app.engine.priority import PriorityEngine
 from app.engine.rubric import load_rubric
+from app.engine.skills import Skills
 from app.engine.sync import SyncService
+from app.engine.triage import InboxTriage
 from app.events import EventBus
 from app.integrations.connections import ConnectionService
 from app.integrations.notify.base import Notifier
@@ -157,7 +161,25 @@ def create_app(
         )
 
     budget.set_on_exceeded(budget_exceeded)
-    briefer = Briefer(session_factory, app_config, clock)
+    briefer = Briefer(
+        session_factory,
+        app_config,
+        clock,
+        morning_notes=lambda s, on, now: day_insights(
+            s, on, now, tz, app_config.workday
+        ).sentences(),
+    )
+    skills = Skills(
+        prep=MeetingPrep(
+            session_factory,
+            llm,
+            adapters,
+            tz,
+            clock,
+            minutes_before=app_config.workday.prep_minutes_before,
+        ),
+        triage=InboxTriage(session_factory, llm),
+    )
     learning = LearningService(session_factory, clock)
     delegation = DelegationService(llm, adapters, notifiers, tz, clock)
     actions = ActionService(
@@ -184,8 +206,18 @@ def create_app(
         tz,
         clock,
         name=app_config.assistant_name,
+        skills=skills,
     )
-    jobs = AssistantJobs(sync_service, briefer, bus, session_factory, followups, actions)
+    jobs = AssistantJobs(
+        sync_service,
+        briefer,
+        bus,
+        session_factory,
+        followups,
+        actions,
+        prep=skills.prep,
+        notices=notices,
+    )
 
     stt = stt or WhisperSTT(app_config.stt)
     tts = tts or build_tts(app_config.tts, settings.piper_voices_dir)

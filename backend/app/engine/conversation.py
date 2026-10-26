@@ -45,8 +45,10 @@ from app.engine.delegation import (
     spoken_day,
 )
 from app.engine.learning import LearningService, preferences_block
+from app.engine.prep import upcoming_meeting
 from app.engine.priority import prescore
 from app.engine.rubric import Rubric
+from app.engine.skills import SKILL_TOOLS, Skills
 from app.integrations.base import Chat
 from app.integrations.http import AuthExpiredError, IntegrationError
 from app.llm.client import LLMClient, Task
@@ -509,8 +511,10 @@ class ConversationAgent:
         clock: Clock,
         new_id: Callable[[], str] = lambda: uuid.uuid4().hex,
         name: str = "Atlas",
+        skills: Skills | None = None,
     ) -> None:
         self.name = name
+        self.skills = skills or Skills()
         self._sessions = session_factory
         self._llm = llm
         self._actions = actions
@@ -776,7 +780,7 @@ class ConversationAgent:
                     system=system,
                     messages=messages,
                     max_tokens=1500,
-                    tools=TOOLS,
+                    tools=[*TOOLS, *SKILL_TOOLS],
                 )
                 texts = [b.text for b in response.content if b.type == "text"]
                 uses = [b for b in response.content if b.type == "tool_use"]
@@ -1327,6 +1331,49 @@ class ConversationAgent:
         if isinstance(found, dict):
             return found
         return {"status": "done", "message": self._learning.set_band(str(found), band)}
+
+    # -- chief-of-staff skills ------------------------------------------------------
+
+    def _tool_prep_meeting(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.prep is None:
+            return {"error": "Meeting prep isn't available."}
+        ref = str(args.get("item_ref", "") or "").strip()
+        with self._sessions() as s:
+            if ref:
+                found = self._resolve(s, ref, state)
+                if isinstance(found, str):
+                    return {"error": found}
+                item: ItemRow | None = found
+            else:
+                item = upcoming_meeting(s, self._clock())
+            if item is None:
+                return {"error": "You have no more meetings today."}
+            if item.kind != ItemKind.MEETING:
+                return {"error": f"{clean_title(item.title)} isn't a meeting."}
+            item_id = item.id
+        return {"prep": self.skills.prep.prepare(item_id)}
+
+    def _tool_triage_inbox(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.triage is None:
+            return {"error": "Inbox triage isn't available."}
+        result = self.skills.triage.run()
+        readbacks = []
+        for d in result.drafts:
+            readback = (
+                f"Replying to {d.to} about {clean_title(d.subject)}, saying: {d.text} Confirm?"
+            )
+            params = {
+                "title": f"Reply: {d.subject}",
+                "source": d.source,
+                "message_id": d.message_id,
+                "to": [d.to],
+                "to_name": d.to,
+                "subject": d.subject,
+                "text": d.text,
+            }
+            self._propose(state, turn, ActionKind.REPLY_EMAIL, None, readback, params)
+            readbacks.append(readback)
+        return {"summary": result.summary(), "drafted_replies": readbacks}
 
     def _tool_set_preference(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
         pref = self._learning.add_rule(str(args.get("rule", "")))

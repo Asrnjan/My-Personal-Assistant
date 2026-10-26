@@ -361,3 +361,22 @@ class PushSubscriptionRow(Base):
     auth: Mapped[str] = mapped_column(String(64))
     client_id: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class MemoRow(Base):
+    """Something the assistant keeps for later, keyed by kind: a meeting prep already sent
+    ("prep", key = item id), a fact the CEO asked it to remember ("fact"), a promise to
+    remind about ("promise"), a weekly report ("report") or the CEO's writing style."""
+
+    __tablename__ = "memos"
+    __table_args__ = (UniqueConstraint("kind", "key", name="uq_memos_kind_key"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    key: Mapped[str] = mapped_column(String(255))
+    text: Mapped[str] = mapped_column(Text)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    # When a reminder is due, or when a note stops mattering.
+    due_at: Mapped[datetime | None]

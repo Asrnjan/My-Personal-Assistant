@@ -155,6 +155,20 @@ def offline_responder(score: int = 50, band: str = "P2_delegate") -> Responder:
                 {"acknowledged": accepted, "has_question": "?" in user, "confidence": 0.9},
                 model=model,
             )
+        if "prepare a CEO for a meeting" in system:
+            meeting = re.search(r"Meeting: (.*)", user)
+            who = re.search(r"Attendees: (.*)", user)
+            return fake_message(
+                f"{(meeting.group(1) if meeting else 'Your meeting').strip()} is with "
+                f"{(who.group(1) if who else 'your team').strip()}.",
+                model=model,
+            )
+        if "draft short email replies" in system:
+            ids = re.findall(r"item_id: (\S+)", user)
+            drafts = [
+                {"item_id": i, "reply": "Thanks, I'll come back to you on this."} for i in ids
+            ]
+            return fake_message({"drafts": drafts}, model=model)
         if params.get("tools"):
             return fake_message(
                 "I'm running offline, so I can only handle brief me, yes, cancel and skip.",

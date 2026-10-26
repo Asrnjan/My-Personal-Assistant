@@ -34,6 +34,15 @@ class DelegationBrief(BaseModel):
     handoff_type: Literal["full_ownership", "keep_me_updated"]
 
 
+class ReplyDraft(BaseModel):
+    item_id: str
+    reply: str = Field(description="The reply body in the CEO's voice, plain text.")
+
+
+class ReplyDrafts(BaseModel):
+    drafts: list[ReplyDraft]
+
+
 class AckClassification(BaseModel):
     acknowledged: bool
     has_question: bool
