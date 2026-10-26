@@ -21,3 +21,11 @@ class LLMTruncatedError(LLMError):
 
 class LLMOutputError(LLMError):
     """The model did not return output matching the requested schema."""
+
+
+class LLMUnavailableError(LLMError):
+    """Claude couldn't be reached (after the SDK's own retries) or returned an API error."""
+
+
+class LLMAuthError(LLMUnavailableError):
+    """No Claude API key is set, or the key was rejected."""

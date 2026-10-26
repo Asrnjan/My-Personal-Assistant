@@ -109,3 +109,14 @@ def test_team_emails_can_go_without_asking_but_outsiders_always_wait(harness: Ha
 
 def test_quiet_week_report(harness: Harness) -> None:
     assert _activity(harness).weekly() == "This week I didn't act on anything for you."
+
+
+def test_a_missing_claude_key_gets_a_spoken_answer_not_a_crash(harness: Harness) -> None:
+    from app.llm.errors import LLMAuthError
+
+    def no_key(_params: object) -> None:
+        raise LLMAuthError("no Claude API key is set")
+
+    harness.sender.queue(no_key)  # type: ignore[arg-type]
+    reply = harness.converse("Think through the Pune office idea")
+    assert reply["reply"].startswith("I can't reach Claude: its key is missing or wrong.")

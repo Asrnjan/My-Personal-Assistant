@@ -54,7 +54,7 @@ from app.engine.skills import SKILL_TOOLS, Skills
 from app.integrations.base import Chat
 from app.integrations.http import AuthExpiredError, IntegrationError
 from app.llm.client import LLMClient, Task
-from app.llm.errors import BudgetExceededError, LLMError
+from app.llm.errors import BudgetExceededError, LLMAuthError, LLMError
 from app.llm.prompts import load_prompt, untrusted
 
 log = logging.getLogger(__name__)
@@ -813,6 +813,12 @@ class ConversationAgent:
             return (
                 "I've reached this month's AI budget, so I can only handle simple commands: "
                 "brief me, yes, cancel, or skip one."
+            )
+        except LLMAuthError as exc:
+            log.warning("conversation call failed: %s", exc)
+            return (
+                "I can't reach Claude: its key is missing or wrong. Add your Claude key in the "
+                "Apps tab. Until then I can only do brief me, yes, cancel and skip."
             )
         except LLMError as exc:
             log.warning("conversation call failed: %s", exc)

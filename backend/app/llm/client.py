@@ -18,7 +18,13 @@ from anthropic.types import Message, MessageParam
 from pydantic import BaseModel, ValidationError
 
 from app.config import ModelsConfig
-from app.llm.errors import LLMOutputError, LLMRefusalError, LLMTruncatedError
+from app.llm.errors import (
+    LLMAuthError,
+    LLMOutputError,
+    LLMRefusalError,
+    LLMTruncatedError,
+    LLMUnavailableError,
+)
 from app.llm.prompts import load_prompt
 from app.llm.schemas import strict_json_schema
 from app.llm.usage import BudgetGuard, UsageLedger
@@ -62,7 +68,17 @@ class AnthropicSender:
             # Created lazily so the app starts without credentials; the SDK
             # falls back to ANTHROPIC_API_KEY or an `ant auth login` profile.
             self._client = anthropic.Anthropic(api_key=self._api_key, max_retries=self._max_retries)
-        response: Message = self._client.messages.create(**params)
+        try:
+            response: Message = self._client.messages.create(**params)
+        except TypeError as exc:
+            # The SDK raises this before sending when it finds no credentials at all.
+            if "authentication" not in str(exc).lower():
+                raise
+            raise LLMAuthError("no Claude API key is set") from exc
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as exc:
+            raise LLMAuthError("the Claude API key was rejected") from exc
+        except anthropic.APIError as exc:
+            raise LLMUnavailableError(f"Claude API error: {exc}") from exc
         return response
 
 
