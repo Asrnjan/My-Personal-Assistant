@@ -239,6 +239,8 @@ class Settings(BaseSettings):
 
     # Folder holding Piper ``.onnx`` voices (docs/SETUP.md, "Voices").
     piper_voices_dir: Path = Path("voices")
+    # Where presentations and other files the assistant makes are kept.
+    files_dir: Path = Path("files")
     # Requests a minute per client (bearer token, else address); 0 turns limiting off.
     rate_limit_per_minute: int = 120
     # Tighter limit on POST /auth/token per address, against guessing the shared secret.
@@ -258,6 +260,7 @@ class Settings(BaseSettings):
         "contacts_path",
         "approval_policy_path",
         "piper_voices_dir",
+        "files_dir",
         "pwa_dir",
         mode="before",
     )

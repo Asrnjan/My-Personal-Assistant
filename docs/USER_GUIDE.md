@@ -59,6 +59,7 @@ The brief also warns you about meetings that overlap, a day with no free block f
 | "Should I hire a second sales lead?" | A recommendation, pros and cons, the main risk, and what to find out first, from your own context |
 | "Draft a LinkedIn post about our Pune office" | A draft in your writing style (learned from your sent mail) |
 | "What's the latest on Tata Motors?" / "What's the weather in Mumbai?" | A web search, answered in a few sentences with the source named. Turn it off with `models.web_search: false` in `config/config.yaml` |
+| "Make me a 6-slide deck for the Sattva pitch: our offer, pricing and the ask" | A real PowerPoint file with speaker notes; tap **Open** under the reply to open or share it. Missing numbers are left as [placeholders] |
 | "What did you do this week?" / "Undo that" | Everything it did; undo reopens items, reverts team changes, or moves a meeting back after a yes. Sent messages can't be unsent. |
 | "Send emails to my team without asking" | Emails to people on your team go straight away; anyone else still needs your yes. "Always ask before emailing" switches it back. Works for emails, replies, Teams messages, meetings and delegations. |
 

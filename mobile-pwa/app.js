@@ -1187,8 +1187,50 @@ function showReply(text) {
   bubble.hidden = !text;
 }
 
+// Files made in this turn (presentations): an Open button for each, under the reply.
+function showFiles(files) {
+  const box = $('reply-files');
+  const list = Array.isArray(files) ? files : [];
+  box.hidden = list.length === 0;
+  box.replaceChildren(...list.map((file) => h('button', {
+    type: 'button',
+    class: 'btn btn-primary sm file-btn',
+    'aria-label': `Open ${file.name}`,
+    text: `Open ${file.name}`,
+    onclick: () => openFile(file),
+  })));
+}
+
+async function openFile(file) {
+  let res;
+  try {
+    res = await api(`/files/${encodeURIComponent(file.id)}`, { raw: true });
+  } catch (err) {
+    toast(err.message, { variant: 'error', title: 'File' });
+    return;
+  }
+  const blob = await res.blob();
+  // On a phone, share it straight into PowerPoint, Keynote, WhatsApp or Mail.
+  const shared = new File([blob], file.name, { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [shared] })) {
+    try {
+      await navigator.share({ files: [shared], title: file.name });
+      return;
+    } catch {
+      // Cancelled or not allowed: fall back to a download.
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const link = h('a', { href: url, download: file.name });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 function handleConverseResponse(data) {
   if (!data) return;
+  showFiles(data.files);
   if (data.reply) {
     addTurn('assistant', data.reply);
     showReply(data.reply);

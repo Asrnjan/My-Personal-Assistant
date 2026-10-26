@@ -1433,3 +1433,22 @@ label {
     scroll-behavior: auto !important;
   }
 }
+
+/* Files Atlas made for you (presentations), under its reply. */
+.reply-files {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.reply-files[hidden] { display: none; }
+.file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

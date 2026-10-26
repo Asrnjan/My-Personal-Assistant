@@ -66,6 +66,18 @@ class Promises(BaseModel):
     promises: list[Promise]
 
 
+class Slide(BaseModel):
+    title: str = Field(description="A short headline, ideally the slide's takeaway.")
+    bullets: list[str] = Field(description="Two to five short points, no full stops.")
+    notes: str = Field(description="What the CEO says on this slide, two or three sentences.")
+
+
+class DeckOutline(BaseModel):
+    title: str
+    subtitle: str
+    slides: list[Slide]
+
+
 class AckClassification(BaseModel):
     acknowledged: bool
     has_question: bool

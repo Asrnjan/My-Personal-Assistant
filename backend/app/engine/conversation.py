@@ -209,6 +209,13 @@ class ConverseResponse(BaseModel):
     brief: Brief | None = None
     # Accounts to connect (ids from GET /accounts) before the request can be done.
     needs_account: list[str] = []
+    # Files made in this turn (presentations), downloadable from GET /files/{id}.
+    files: list[FileLink] = []
+
+
+class FileLink(BaseModel):
+    id: str
+    name: str
 
 
 @dataclass
@@ -219,6 +226,7 @@ class _Turn:
     say: Callable[[str], None] | None = None
     said: list[str] = field(default_factory=list)
     first_word_at: float | None = None
+    files: list[FileLink] = field(default_factory=list)
     # What was already spoken of the final answer; the rest is spoken at the end.
     final_said: list[str] = field(default_factory=list)
     created: list[str] = field(default_factory=list)
@@ -624,6 +632,7 @@ class ConversationAgent:
             needs_confirmation=bool(pending),
             brief=turn.brief,
             needs_account=turn.needs_account,
+            files=turn.files,
         )
 
     # -- dialogue rules -----------------------------------------------------------
@@ -979,6 +988,15 @@ class ConversationAgent:
         readback: str,
         params: dict[str, Any],
     ) -> dict[str, Any]:
+        # A correction ("make it 60 minutes") replaces the earlier proposal for the same
+        # people instead of standing beside it, so one "yes" can't do both.
+        target = _target(kind, item_id, params)
+        for earlier in self._actions.pending(state.awaiting):
+            if earlier.id in turn.created or earlier.kind != kind:
+                continue
+            if _target(kind, earlier.item_id, self._actions.params(earlier.id)) == target:
+                self._actions.cancel(earlier.id, reason="Replaced by a corrected proposal.")
+                state.awaiting = [a for a in state.awaiting if a != earlier.id]
         action = self._actions.propose(kind, item_id, readback, params, state.id)
         permissions = self.skills.permissions
         if permissions is not None and permissions.allows(kind, params):
@@ -1638,6 +1656,23 @@ class ConversationAgent:
         )
         return {"draft": draft}
 
+    def _tool_make_presentation(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.documents is None:
+            return {"error": "Making presentations isn't available."}
+        topic = str(args.get("topic", "")).strip()
+        if not topic:
+            return self._ask(turn, "What should the deck be about?")
+        made = self.skills.documents.presentation(
+            topic, str(args.get("details", "") or ""), int(args.get("slides") or 6)
+        )
+        turn.files.append(FileLink(id=made.id, name=made.name))
+        return {
+            "status": "ready",
+            "file": made.name,
+            "slides": made.slides,
+            "where": "In the app, under your reply, with an Open button.",
+        }
+
     def _tool_what_did_you_do(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
         if self.skills.activity is None:
             return {"error": "That isn't available."}
@@ -1712,6 +1747,20 @@ def _assistant_blocks(response: Message) -> list[dict[str, Any]]:
     return [b.to_dict() for b in response.content]
 
 
+def _target(kind: ActionKind, item_id: str | None, params: dict[str, Any]) -> tuple[Any, ...]:
+    """Who or what an action is aimed at, to tell a correction from a second request."""
+    if item_id is not None:
+        return (kind, item_id)
+    if kind in (ActionKind.SEND_EMAIL, ActionKind.REPLY_EMAIL):
+        return (kind, tuple(sorted(str(a).lower() for a in params.get("to") or [])))
+    if kind == ActionKind.TEAMS_MESSAGE:
+        return (kind, str(params.get("email") or params.get("chat_id") or "").lower())
+    if kind == ActionKind.BOOK_MEETING:
+        people = tuple(sorted(str(a).lower() for a in params.get("attendees") or []))
+        return (kind, people, str(params.get("start", ""))[:10])
+    return (kind, json.dumps(params, sort_keys=True, default=str))
+
+
 # What to say while a slow lookup runs.
 _HOLD_ON = {
     "web_search": "Let me look that up.",
@@ -1721,6 +1770,7 @@ _HOLD_ON = {
     "prep_meeting": "One moment.",
     "think_through": "Let me think that through.",
     "write_draft": "Drafting that now.",
+    "make_presentation": "Building the deck now. It takes about a minute.",
     "capture_meeting_notes": "Going through your notes.",
 }
 

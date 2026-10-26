@@ -4,7 +4,7 @@
 
 const TOKEN = 'test-token-123';
 
-const API_PREFIXES = ['/auth/', '/brief/', '/converse', '/actions', '/followups', '/stt', '/tts', '/push/', '/health', '/accounts', '/connections'];
+const API_PREFIXES = ['/auth/', '/brief/', '/converse', '/actions', '/followups', '/stt', '/tts', '/push/', '/health', '/accounts', '/connections', '/files/'];
 
 const SAMPLE_BRIEF = {
   kind: 'morning',

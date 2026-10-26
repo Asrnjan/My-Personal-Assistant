@@ -10,6 +10,7 @@ from typing import Any
 
 from app.config import WorkdayConfig
 from app.engine.activity import Activity
+from app.engine.documents import Documents
 from app.engine.followup import FollowUpService
 from app.engine.memory import Memory
 from app.engine.notes import MeetingNotes
@@ -34,6 +35,7 @@ class Skills:
     thinking: Thinking | None = None
     activity: Activity | None = None
     permissions: Permissions | None = None
+    documents: Documents | None = None
 
 
 _ITEM_REF_OPTIONAL = {
@@ -213,6 +215,26 @@ SKILL_TOOLS: list[dict[str, Any]] = [
                 "brief": {"type": "string", "description": "What it should say, with facts."},
             },
             "required": ["kind", "brief"],
+        },
+    },
+    {
+        "name": "make_presentation",
+        "description": (
+            "Make a PowerPoint deck (a .pptx file) the CEO can open, present and share: a "
+            "title slide and content slides with speaker notes. Takes a minute. The file "
+            "appears in the app with an Open button; say it's ready only after this returns."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "What the deck is about."},
+                "details": {
+                    "type": "string",
+                    "description": "What it should cover: points, numbers, audience, the ask.",
+                },
+                "slides": {"type": "integer", "minimum": 1, "maximum": 15},
+            },
+            "required": ["topic"],
         },
     },
     {
