@@ -328,10 +328,30 @@ test('a deck Atlas made can be opened from the reply', async ({ page }) => {
   await page.goto('/');
   await page.locator('#text-input').fill('Make me a deck for the Sattva pitch');
   await page.locator('#text-input').press('Enter');
-  const open = page.getByRole('button', { name: 'Open Sattva pitch.pptx' });
+  const open = page.locator('#reply-files').getByRole('button', { name: 'Open Sattva pitch.pptx' });
   await expect(open).toBeVisible();
+  // It stays with the message in the chat too, and the files list is refreshed.
+  await expect(page.locator('#transcript .turn-files button')).toHaveText('Open Sattva pitch.pptx');
+  await expect.poll(() => findCalls(calls, 'GET', '/files').length).toBeGreaterThan(0);
   const download = page.waitForEvent('download');
   await open.click();
   expect((await download).suggestedFilename()).toBe('Sattva pitch.pptx');
   expect(findCalls(calls, 'GET', `/files/${'f'.repeat(32)}`)[0].headers.authorization).toBe('Bearer test-token-123');
+});
+
+test('your files are listed in the chat tab', async ({ page }) => {
+  await setup(page, {
+    overrides: {
+      'GET /files': () => ({ json: [{ id: 'a'.repeat(32), name: 'Board update.pptx', slides: 7, created_at: '2026-10-26T09:00:00Z' }] }),
+      [`GET /files/${'a'.repeat(32)}`]: () => ({ contentType: 'application/octet-stream', body: 'PK' }),
+    },
+  });
+  await page.goto('/');
+  await page.locator('.tab[data-tab="chat"]').click();
+  const section = page.locator('#files-section');
+  await expect(section).toBeVisible();
+  await expect(section).toContainText('Board update.pptx · 7 slides');
+  const download = page.waitForEvent('download');
+  await section.getByRole('button', { name: 'Open Board update.pptx' }).click();
+  expect((await download).suggestedFilename()).toBe('Board update.pptx');
 });

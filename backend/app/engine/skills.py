@@ -238,6 +238,15 @@ SKILL_TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "list_files",
+        "description": (
+            "The decks and other files you have made for the CEO, newest first. Use it before "
+            "saying anything about where a file is or whether it exists; the app then shows "
+            "an Open button for each one."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "what_did_you_do",
         "description": "Everything you did for the CEO in the last few days, newest first.",
         "input_schema": {

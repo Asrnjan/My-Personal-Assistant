@@ -1115,8 +1115,8 @@ function watchSilence(stream, onSilence, { pauseMs = SILENCE_STOP_MS, onSpeech =
 
 // ---------------------------------------------------------------- conversation
 
-function addTurn(role, text) {
-  state.turns.push({ role, text });
+function addTurn(role, text, files = []) {
+  state.turns.push({ role, text, files: Array.isArray(files) ? files : [] });
   if (state.turns.length > MAX_TURNS * 2) state.turns.splice(0, state.turns.length - MAX_TURNS * 2);
   renderTranscript();
 }
@@ -1126,7 +1126,8 @@ function renderTranscript() {
   const turns = state.turns.slice(-MAX_TURNS);
   list.replaceChildren(...turns.map((t) => h('li', { class: `turn turn-${t.role}` },
     h('span', { class: 'turn-who', text: t.role === 'user' ? 'You' : state.name }),
-    h('span', { class: 'turn-text', text: t.text }))));
+    h('span', { class: 'turn-text', text: t.text }),
+    t.files && t.files.length ? h('div', { class: 'turn-files' }, t.files.map(fileButton)) : null)));
   $('transcript-empty').hidden = turns.length > 0;
 }
 
@@ -1192,13 +1193,40 @@ function showFiles(files) {
   const box = $('reply-files');
   const list = Array.isArray(files) ? files : [];
   box.hidden = list.length === 0;
-  box.replaceChildren(...list.map((file) => h('button', {
+  box.replaceChildren(...list.map(fileButton));
+  if (list.length) loadFiles();
+}
+
+function fileButton(file) {
+  return h('button', {
     type: 'button',
     class: 'btn btn-primary sm file-btn',
     'aria-label': `Open ${file.name}`,
     text: `Open ${file.name}`,
     onclick: () => openFile(file),
-  })));
+  });
+}
+
+// "Your files" in the Chat tab: every deck Atlas made, newest first.
+async function loadFiles() {
+  if (!getToken()) return;
+  let files;
+  try {
+    files = await api('/files');
+  } catch {
+    return; // An older assistant, or offline: keep what's shown.
+  }
+  const list = Array.isArray(files) ? files : [];
+  $('files-section').hidden = list.length === 0;
+  $('files-list').replaceChildren(...list.map((file) => h('li', null,
+    h('span', { class: 'file-name', text: file.slides ? `${file.name} · ${file.slides} slides` : file.name }),
+    h('button', {
+      type: 'button',
+      class: 'btn btn-ghost sm',
+      'aria-label': `Open ${file.name}`,
+      text: 'Open',
+      onclick: () => openFile(file),
+    }))));
 }
 
 async function openFile(file) {
@@ -1232,7 +1260,7 @@ function handleConverseResponse(data) {
   if (!data) return;
   showFiles(data.files);
   if (data.reply) {
-    addTurn('assistant', data.reply);
+    addTurn('assistant', data.reply, data.files);
     showReply(data.reply);
     if (cluster) cluster.pulse(0.5);
   }
@@ -2217,7 +2245,7 @@ function onLogout() {
 async function refreshAll() {
   renderSetup();
   if (!getToken()) return;
-  await Promise.all([loadBrief(), loadPending(), loadFollowups(), loadAccounts(), loadConnections()]);
+  await Promise.all([loadBrief(), loadPending(), loadFollowups(), loadAccounts(), loadConnections(), loadFiles()]);
 }
 
 // ---------------------------------------------------------------- boot

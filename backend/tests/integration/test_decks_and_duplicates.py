@@ -94,3 +94,22 @@ def test_the_same_booking_never_goes_out_twice(harness: Harness) -> None:
     assert again.message == "Already done a moment ago, so I didn't do it again."
     assert len(harness.calendar.created) == 1
     assert harness.audit("action.book_meeting")[-1].outcome == "duplicate"
+
+
+def test_files_are_listed_and_atlas_checks_before_answering(harness: Harness) -> None:
+    assert harness.client.get("/files").json() == []
+    harness.sender.queue(tool_call("list_files"))
+    harness.converse("Where is my deck?")
+    result = harness.sender.calls[-1]["messages"][-1]["content"][0]["content"]
+    assert "You haven't made any files yet." in result
+
+    harness.sender.queue(tool_call("make_presentation", topic="Board update", slides=2))
+    harness.converse("Make a board update deck")
+    [listed] = harness.client.get("/files").json()
+    assert listed["name"] == "Board update.pptx" and listed["slides"] == 2
+
+    harness.sender.queue(tool_call("list_files"))
+    reply = harness.converse("Show me where the deck is")
+    assert reply["files"] == [{"id": listed["id"], "name": "Board update.pptx"}]
+    result = harness.sender.calls[-1]["messages"][-1]["content"][0]["content"]
+    assert "Board update.pptx (2 slides)" in result
