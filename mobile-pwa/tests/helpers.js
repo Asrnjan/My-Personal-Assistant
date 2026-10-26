@@ -155,6 +155,7 @@ async function mockApi(page, overrides = {}) {
     'GET /health': () => ({ json: { status: 'ok' } }),
     'GET /accounts': () => ({ json: accountsBody() }),
     'GET /connections': () => ({ json: connectionsBody() }),
+    'GET /files': () => ({ json: [] }),
   };
 
   await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.abort());

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from pptx import Presentation
@@ -41,6 +42,7 @@ class MadeFile:
     path: Path
     media_type: str
     slides: int = 0
+    created_at: datetime | None = None
 
 
 def safe_name(title: str) -> str:
@@ -97,6 +99,26 @@ class Documents:
                 )
             )
         return made
+
+    def recent(self, limit: int = 10) -> list[MadeFile]:
+        """Files made so far that still exist, newest first."""
+        with self._sessions() as s:
+            rows = list(
+                s.scalars(
+                    select(MemoRow)
+                    .where(MemoRow.kind == "file")
+                    .order_by(MemoRow.created_at.desc())
+                    .limit(limit * 2)
+                )
+            )
+        out = []
+        for row in rows:
+            path = Path(str(row.data.get("path", "")))
+            if path.is_file():
+                media = str(row.data.get("media_type", PPTX_TYPE))
+                slides = int(row.data.get("slides", 0) or 0)
+                out.append(MadeFile(row.key, row.text, path, media, slides, row.created_at))
+        return out[:limit]
 
     def get(self, file_id: str) -> MadeFile | None:
         if not re.fullmatch(r"[0-9a-f]{32}", file_id):

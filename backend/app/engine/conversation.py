@@ -1670,7 +1670,19 @@ class ConversationAgent:
             "status": "ready",
             "file": made.name,
             "slides": made.slides,
-            "where": "In the app, under your reply, with an Open button.",
+            "where": "An Open button under this reply, and in Your files in the Chat tab.",
+        }
+
+    def _tool_list_files(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.documents is None:
+            return {"error": "Files aren't available."}
+        files = self.skills.documents.recent(5)
+        if not files:
+            return {"files": [], "note": "You haven't made any files yet."}
+        turn.files += [FileLink(id=f.id, name=f.name) for f in files]
+        return {
+            "files": [f"{f.name} ({f.slides} slides)" for f in files],
+            "where": "Each has an Open button under this reply, and in Your files in the Chat tab.",
         }
 
     def _tool_what_did_you_do(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
