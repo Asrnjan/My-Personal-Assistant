@@ -69,15 +69,20 @@ Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
 class ModelsConfig(_Strict):
     bulk: str = "claude-haiku-5-5"
-    conversation: str = "claude-sonnet-5-5"
+    # Spoken back-and-forth: the fastest model, so a reply starts in about a second.
+    conversation: str = "claude-haiku-5-5"
+    # Work that needs more judgment: decisions, drafting, meeting notes, delegation briefs
+    # and second opinions on priorities.
+    reasoning: str = "claude-sonnet-5-5"
     bulk_effort: Effort = "low"
     # "low" keeps spoken replies quick; raise it for more careful (slower) answers.
     conversation_effort: Effort = "low"
+    reasoning_effort: Effort = "low"
     max_retries: int = Field(default=3, ge=0, le=10)
     # Re-run a refused conversation request on a fallback model (server-side, Claude API).
     refusal_fallback: bool = True
     # Quick spoken replies: no extended thinking in conversation where the model allows it
-    # (Claude Sonnet 5.5's "between_tools"); other models keep adaptive thinking.
+    # (thinking off on Claude Haiku 5.5, "between_tools" on Claude Sonnet 5.5).
     fast_replies: bool = True
     # Let the conversation search the web for news, facts, companies and people.
     web_search: bool = True

@@ -9,6 +9,8 @@ All calls go through :class:`LLMClient`. The network is behind the
 from __future__ import annotations
 
 import json
+import logging
+import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from enum import StrEnum
@@ -33,6 +35,8 @@ from app.llm.usage import BudgetGuard, UsageLedger
 T = TypeVar("T", bound=BaseModel)
 
 # Models that accept the server-side refusal fallback in its "default" form.
+log = logging.getLogger(__name__)
+
 _FALLBACK_MODELS = frozenset(
     {"claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-5", "claude-fable-5-1"}
 )
@@ -43,7 +47,8 @@ class Task(StrEnum):
     """What a call is for; decides the model and effort."""
 
     BULK = "bulk"  # scoring, classification
-    CONVERSATION = "conversation"  # dialogue, delegation briefs, hard judgment calls
+    CONVERSATION = "conversation"  # spoken dialogue: speed first
+    REASONING = "reasoning"  # decisions, drafting, delegation briefs, hard judgment calls
 
 
 TextHandler = Callable[[str], None]
@@ -79,11 +84,22 @@ class AnthropicSender:
             response: Message = self._ensure_client().messages.create(**params)
         return response
 
-    def stream(self, params: dict[str, Any], on_text: TextHandler) -> Message:
-        """Like ``send``, calling ``on_text`` with each piece of text as it streams in."""
+    def stream(
+        self,
+        params: dict[str, Any],
+        on_text: TextHandler,
+        on_tool: TextHandler | None = None,
+    ) -> Message:
+        """Like ``send``, calling ``on_text`` with each piece of text as it streams in, and
+        ``on_tool`` with a tool's name the moment the model starts calling it."""
         with _api_errors(), self._ensure_client().messages.stream(**params) as stream:
-            for text in stream.text_stream:
-                on_text(text)
+            for event in stream:
+                if event.type == "content_block_start" and on_tool is not None:
+                    block = event.content_block
+                    if block.type in ("tool_use", "server_tool_use"):
+                        on_tool(block.name)
+                elif event.type == "content_block_delta" and event.delta.type == "text_delta":
+                    on_text(event.delta.text)
             final = stream.get_final_message()
         return cast(Message, final)
 
@@ -104,8 +120,11 @@ def _api_errors() -> Iterator[None]:
         raise LLMUnavailableError(f"Claude API error: {exc}") from exc
 
 
-# Models that accept thinking "between_tools" (thinking off except short progress notes).
-_BETWEEN_TOOLS_MODELS = frozenset({"claude-sonnet-5-5"})
+# The lowest thinking setting per model, for quick replies (each only at effort <= high).
+_FAST_THINKING: dict[str, dict[str, str]] = {
+    "claude-sonnet-5-5": {"type": "between_tools"},
+    "claude-haiku-5-5": {"type": "disabled"},
+}
 # Models with the web search tool that filters results with code (newer variant).
 _DYNAMIC_WEB_SEARCH_MODELS = (
     "claude-opus-5",
@@ -146,10 +165,18 @@ class LLMClient:
         return tool
 
     def model_for(self, task: Task) -> str:
-        return self._models.bulk if task is Task.BULK else self._models.conversation
+        return {
+            Task.BULK: self._models.bulk,
+            Task.CONVERSATION: self._models.conversation,
+            Task.REASONING: self._models.reasoning,
+        }[task]
 
     def _effort_for(self, task: Task) -> str:
-        return self._models.bulk_effort if task is Task.BULK else self._models.conversation_effort
+        return {
+            Task.BULK: self._models.bulk_effort,
+            Task.CONVERSATION: self._models.conversation_effort,
+            Task.REASONING: self._models.reasoning_effort,
+        }[task]
 
     def build_params(
         self,
@@ -185,18 +212,19 @@ class LLMClient:
             "messages": list(messages),
             "output_config": output_config,
         }
+        fast = _FAST_THINKING.get(model)
         if (
             task is Task.CONVERSATION
             and self._models.fast_replies
-            and model in _BETWEEN_TOOLS_MODELS
+            and fast is not None
             and output_config["effort"] in ("low", "medium", "high")
         ):
             # No extended thinking before answering: the biggest single cut in reply time.
-            params["thinking"] = {"type": "between_tools"}
+            params["thinking"] = fast
         if tools:
             params["tools"] = list(tools)
         if (
-            task is Task.CONVERSATION
+            task in (Task.CONVERSATION, Task.REASONING)
             and self._models.refusal_fallback
             and model in _FALLBACK_MODELS
         ):
@@ -216,6 +244,7 @@ class LLMClient:
         tools: Sequence[dict[str, Any]] | None = None,
         effort: str | None = None,
         on_text: TextHandler | None = None,
+        on_tool: TextHandler | None = None,
     ) -> Message:
         """Send one request. Raises ``BudgetExceededError`` before sending when
         the monthly cap is reached, and ``LLMRefusalError`` / ``LLMTruncatedError``
@@ -230,10 +259,11 @@ class LLMClient:
             tools=tools,
             effort=effort,
         )
+        started = time.perf_counter()
         stream = getattr(self._sender, "stream", None)
         if on_text is not None and stream is not None:
             # Text arrives as it is written, so a voice reply can start before it's done.
-            response = cast(Message, stream(params, on_text))
+            response = cast(Message, stream(params, on_text, on_tool))
         else:
             response = self._sender.send(params)
         usage = response.usage
@@ -246,6 +276,7 @@ class LLMClient:
             cache_read_input_tokens=usage.cache_read_input_tokens or 0,
             request_id=getattr(response, "_request_id", None),
         )
+        log.info("llm %s took %.1f s", purpose, time.perf_counter() - started)
         if response.stop_reason == "refusal":
             category = response.stop_details.category if response.stop_details else None
             raise LLMRefusalError(f"model declined the request (category: {category})")

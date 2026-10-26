@@ -145,7 +145,7 @@ class Thinking:
     def think_through(self, question: str) -> str:
         context = self._context(question)
         response = self._llm.call(
-            Task.CONVERSATION,
+            Task.REASONING,
             "decision",
             system=[load_prompt("decide").text],
             messages=[{"role": "user", "content": f"{context}\n\nThe decision: {question}"}],
@@ -164,7 +164,7 @@ class Thinking:
         facts = self._memory.recall([brief], limit=8)
         context = ("Facts you may use:\n" + "\n".join(facts) + "\n\n") if facts else ""
         response = self._llm.call(
-            Task.CONVERSATION,
+            Task.REASONING,
             "writer",
             system=system,
             messages=[{"role": "user", "content": f"{context}Write a {kind}: {brief}"}],

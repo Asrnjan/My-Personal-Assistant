@@ -294,9 +294,7 @@ class PriorityEngine:
         for i in range(0, len(to_escalate), BATCH_SIZE):
             batch = to_escalate[i : i + BATCH_SIZE]
             try:
-                second = self._ask(
-                    Task.CONVERSATION, "priority.escalate", system, batch, pre, results
-                )
+                second = self._ask(Task.REASONING, "priority.escalate", system, batch, pre, results)
             except BudgetExceededError:
                 report.rules_only = True
                 break

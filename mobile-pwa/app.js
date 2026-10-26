@@ -94,7 +94,7 @@ const FOLLOW_UP_MS = 15000;
 const END_CONVERSATION = /^\s*(thanks|thank you|thankyou|that'?s all|that is all|that'?s it|stop|bye|goodbye|good bye|never ?mind|no thanks|no thank you|i'?m done|all done)\b/i;
 const RECORD_LIMIT_MS = 30000;
 // Recording stops by itself after this much quiet once you have started speaking.
-const SILENCE_STOP_MS = 1800;
+const SILENCE_STOP_MS = 1200;
 const SILENCE_LEVEL = 0.02;
 
 const state = {

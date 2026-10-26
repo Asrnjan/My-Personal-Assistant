@@ -83,13 +83,21 @@ class FakeSender:
     def queue(self, *responses: Message | Responder) -> None:
         self._queue.extend(responses)
 
-    def stream(self, params: dict[str, Any], on_text: Callable[[str], None]) -> Message:
-        """Like ``send``, handing the reply's text over word by word as a stream would."""
+    def stream(
+        self,
+        params: dict[str, Any],
+        on_text: Callable[[str], None],
+        on_tool: Callable[[str], None] | None = None,
+    ) -> Message:
+        """Like ``send``, handing the reply's text over word by word as a stream would,
+        and each tool's name as its call starts."""
         message = self.send(params)
         for block in message.content:
             if block.type == "text":
                 for piece in re.findall(r"\S+\s*", block.text):
                     on_text(piece)
+            elif block.type == "tool_use" and on_tool is not None:
+                on_tool(block.name)
         return message
 
     def send(self, params: dict[str, Any]) -> Message:

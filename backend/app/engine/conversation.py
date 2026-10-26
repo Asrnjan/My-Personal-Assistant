@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time as time_module
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -217,6 +218,7 @@ class _Turn:
     # Called with each sentence as soon as it's written (streamed replies), or None.
     say: Callable[[str], None] | None = None
     said: list[str] = field(default_factory=list)
+    first_word_at: float | None = None
     # What was already spoken of the final answer; the rest is spoken at the end.
     final_said: list[str] = field(default_factory=list)
     created: list[str] = field(default_factory=list)
@@ -573,9 +575,20 @@ class ConversationAgent:
     ) -> ConverseResponse:
         """Answer the CEO. With ``on_say``, sentences are handed over as soon as they're
         written, and the response's ``rest`` is what still has to be spoken."""
+        started = time_module.perf_counter()
         state = self._load(conversation_id)
         state.awaiting = self._still_pending(state.awaiting)
         turn = _Turn(text=spoken_addresses(text.strip()[:2000]), via=via, say=on_say)
+        if on_say is not None:
+            # Log when the first words went out: the delay the CEO actually feels.
+            say = on_say
+
+            def timed(sentence: str) -> None:
+                if turn.first_word_at is None:
+                    turn.first_word_at = time_module.perf_counter()
+                say(sentence)
+
+            turn.say = timed
         if not turn.text:
             reply = "Sorry, I didn't catch that."
         elif self._policy.forbidden_request(turn.text):
@@ -593,6 +606,13 @@ class ConversationAgent:
         ]
         self._save(state)
         pending = self._actions.pending(state.awaiting) if state.awaiting else []
+        took = time_module.perf_counter() - started
+        first = (
+            f", first words after {turn.first_word_at - started:.1f} s"
+            if turn.first_word_at
+            else ""
+        )
+        log.info("conversation turn took %.1f s%s", took, first)
         spoken = " ".join(turn.final_said)
         rest = reply[len(spoken) :].strip() if spoken and reply.startswith(spoken) else reply
         return ConverseResponse(
@@ -816,6 +836,7 @@ class ConversationAgent:
                     max_tokens=1500,
                     tools=tools,
                     on_text=speaker.feed if speaker else None,
+                    on_tool=(lambda name: self._hold_on(turn, name)) if turn.say else None,
                 )
                 if speaker is not None:
                     speaker.flush()
@@ -911,6 +932,15 @@ class ConversationAgent:
                 return f"Do you mean {scored[0][0].title} or {scored[1][0].title}?"
             return scored[0][0]
         return f"I couldn't find {ref} on your list."
+
+    def _hold_on(self, turn: _Turn, tool: str) -> None:
+        """Say a few words the moment a slow lookup starts, so a spoken conversation never
+        goes quiet. Once per turn, and only while nothing else has been said."""
+        phrase = _HOLD_ON.get(tool)
+        if phrase is None or turn.said or turn.say is None:
+            return
+        turn.said.append(phrase)
+        turn.say(phrase)
 
     def _run_tool(self, state: _State, turn: _Turn, name: str, args: dict[str, Any]) -> Any:
         try:
@@ -1681,6 +1711,18 @@ def _assistant_blocks(response: Message) -> list[dict[str, Any]]:
     and also thinking notes and web search calls and results, which must be passed back."""
     return [b.to_dict() for b in response.content]
 
+
+# What to say while a slow lookup runs.
+_HOLD_ON = {
+    "web_search": "Let me look that up.",
+    "search_email": "Let me check your email.",
+    "read_teams": "Let me check Teams.",
+    "triage_inbox": "Going through your inbox.",
+    "prep_meeting": "One moment.",
+    "think_through": "Let me think that through.",
+    "write_draft": "Drafting that now.",
+    "capture_meeting_notes": "Going through your notes.",
+}
 
 # The end of a sentence: punctuation, then a space before more text (so "3.5" isn't one).
 _SENTENCE_END = re.compile(r"[.!?][\"')\]]*\s+(?=\S)")

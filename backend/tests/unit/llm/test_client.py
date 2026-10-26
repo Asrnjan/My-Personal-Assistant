@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import types
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -59,12 +60,16 @@ def test_routing_effort_and_cache_placement(
     assert "extra_body" not in params
 
 
-def test_conversation_uses_sonnet_with_refusal_fallback(
+def test_conversation_is_fast_and_reasoning_uses_sonnet_with_refusal_fallback(
     make_llm: Callable[..., LLMClient], sender: FakeSender
 ) -> None:
     llm = make_llm()
+    talk = llm.build_params(Task.CONVERSATION, system=[], messages=[], max_tokens=10)
+    assert talk["model"] == "claude-haiku-5-5"
+    assert talk["thinking"] == {"type": "disabled"}  # no extended thinking before replying
+    assert "extra_body" not in talk  # no server-side fallback for Haiku
     params = llm.build_params(
-        Task.CONVERSATION,
+        Task.REASONING,
         system=["S"],
         messages=[{"role": "user", "content": "hi"}],
         max_tokens=100,
@@ -75,9 +80,10 @@ def test_conversation_uses_sonnet_with_refusal_fallback(
     assert params["extra_headers"] == {"anthropic-beta": FALLBACK_BETA}
     assert params["extra_body"] == {"fallbacks": "default"}
     assert params["tools"][0]["name"] == "list_items"
+    assert "thinking" not in params  # reasoning keeps adaptive thinking
 
     off = make_llm(refusal_fallback=False).build_params(
-        Task.CONVERSATION, system=[], messages=[], max_tokens=10
+        Task.REASONING, system=[], messages=[], max_tokens=10
     )
     assert "extra_body" not in off
 
@@ -225,8 +231,19 @@ def test_other_type_errors_are_not_hidden(monkeypatch: pytest.MonkeyPatch) -> No
 def test_sender_streams_text_as_it_arrives(monkeypatch: pytest.MonkeyPatch) -> None:
     final = fake_message("Hello there.")
 
+    def delta(text: str) -> object:
+        return types.SimpleNamespace(
+            type="content_block_delta", delta=types.SimpleNamespace(type="text_delta", text=text)
+        )
+
+    tool_start = types.SimpleNamespace(
+        type="content_block_start",
+        content_block=types.SimpleNamespace(type="server_tool_use", name="web_search"),
+    )
+
     class Stream:
-        text_stream = iter(["Hello ", "there."])
+        def __iter__(self) -> object:
+            return iter([tool_start, delta("Hello "), delta("there.")])
 
         def __enter__(self) -> Stream:
             return self
@@ -246,5 +263,7 @@ def test_sender_streams_text_as_it_arrives(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr("app.llm.client.anthropic.Anthropic", Streaming)
     pieces: list[str] = []
-    assert AnthropicSender("k", max_retries=0).stream({"model": "m"}, pieces.append) is final
-    assert pieces == ["Hello ", "there."]
+    tools: list[str] = []
+    sender = AnthropicSender("k", max_retries=0)
+    assert sender.stream({"model": "m"}, pieces.append, tools.append) is final
+    assert pieces == ["Hello ", "there."] and tools == ["web_search"]

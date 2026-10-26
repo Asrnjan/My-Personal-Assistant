@@ -8,7 +8,7 @@ Copies each ``config/*.example.yaml`` you don't have yet, creates ``.env`` from
 key pair (``VAPID_*``) when ``.env`` has none, so phone notifications work without a manual
 step. Nothing that already has a value is changed, except that an old ``config.yaml``
 still carrying an earlier, slower shipped default (``conversation_effort: medium``, speech
-``model_size: small``) is moved to the quicker one. Uses only the standard library plus
+``model_size: small``, conversation on ``claude-sonnet-5-5``) is moved to the quicker one. Uses only the standard library plus
 ``cryptography`` (installed with the backend).
 """
 
@@ -65,6 +65,16 @@ _SPEED_UPS = (
         re.compile(r"^([ \t]*model_size:[ \t]*)small(?=[ \t\r]*$)", flags=re.M),
         "base.en",
         "quicker speech recognition (stt model_size: base.en)",
+    ),
+    # Conversation on the fastest model; decisions and drafting keep the stronger one
+    # (models.reasoning). Matches the shipped line, with or without its comment.
+    (
+        re.compile(
+            r"^([ \t]*conversation:[ \t]*)claude-sonnet-5-5(?:[ \t]*#[^\r\n]*)?(?=\r?$)",
+            flags=re.M,
+        ),
+        "claude-haiku-5-5  # spoken back-and-forth: fastest replies",
+        "quicker conversation (models.conversation: claude-haiku-5-5)",
     ),
 )
 
