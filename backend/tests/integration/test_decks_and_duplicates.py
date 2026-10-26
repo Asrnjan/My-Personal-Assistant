@@ -34,8 +34,9 @@ def test_a_deck_is_made_and_downloaded(harness: Harness) -> None:
     assert resp.headers["content-type"].startswith("application/vnd.openxmlformats")
     assert "Sattva%20Group%20pitch.pptx" in resp.headers["content-disposition"]
     deck = Presentation(io.BytesIO(resp.content))
-    assert len(deck.slides) == 3  # title + two content slides
-    assert deck.slides[0].shapes.title.text == "Sattva Group pitch"
+    assert len(deck.slides) == 4  # cover, two content slides, closing
+    cover = [shape.text_frame.text for shape in deck.slides[0].shapes if shape.has_text_frame]
+    assert "Sattva Group pitch" in cover
     assert deck.slides[1].notes_slide.notes_text_frame.text == "Say this."
 
     assert harness.client.get("/files/" + "0" * 32).status_code == 404
