@@ -20,15 +20,26 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import AppConfig
 from app.db.models import BriefRow
 from app.engine.actions import ActionService
+from app.engine.activity import Activity
 from app.engine.briefing import Brief, Briefer, BriefKind
 from app.engine.followup import FollowUpReport, FollowUpService
+from app.engine.notices import Notices
+from app.engine.prep import MeetingPrep
+from app.engine.pulse import TeamPulse
+from app.engine.reminders import Reminders
 from app.engine.sync import SyncOutcome, SyncService
+from app.engine.thinking import Thinking
 from app.events import Event, EventBus
 
 log = logging.getLogger(__name__)
 
 # Acknowledgement checks, nudges and overdue marking.
 FOLLOWUP_MINUTES = 30
+# How often to look for a meeting that is about to start and needs a prep.
+PREP_CHECK_MINUTES = 2
+# Reminders due now; promises read from sent mail less often.
+REMINDER_CHECK_MINUTES = 5
+SENT_SCAN_HOURS = 3
 
 
 @dataclass
@@ -46,6 +57,13 @@ class AssistantJobs:
         session_factory: sessionmaker[Session],
         followups: FollowUpService | None = None,
         actions: ActionService | None = None,
+        *,
+        prep: MeetingPrep | None = None,
+        notices: Notices | None = None,
+        reminders: Reminders | None = None,
+        pulse: TeamPulse | None = None,
+        thinking: Thinking | None = None,
+        activity: Activity | None = None,
     ) -> None:
         self._sync = sync
         self._briefer = briefer
@@ -53,6 +71,12 @@ class AssistantJobs:
         self._sessions = session_factory
         self._followups = followups
         self._actions = actions
+        self._prep = prep
+        self._notices = notices
+        self._reminders = reminders
+        self._pulse = pulse
+        self._thinking = thinking
+        self._activity = activity
         # The scheduler thread and a manual /sync must not ingest at the same time.
         self._sync_lock = threading.Lock()
 
@@ -117,6 +141,70 @@ class AssistantJobs:
         except Exception:
             log.exception("follow-up check failed")
 
+    def send_preps(self) -> list[str]:
+        """Prep for each meeting about to start, sent to the CEO's phone and chat."""
+        if self._prep is None or self._notices is None:
+            return []
+        sent = []
+        for _item_id, text in self._prep.due():
+            self._notices.tell(f"Before your next meeting: {text}")
+            sent.append(text)
+        return sent
+
+    def background_preps(self) -> None:
+        try:
+            self.send_preps()
+        except Exception:
+            log.exception("meeting prep failed")
+
+    def send_reminders(self) -> list[str]:
+        if self._reminders is None or self._notices is None:
+            return []
+        texts = self._reminders.due_now()
+        for text in texts:
+            self._notices.tell(f"Reminder: {text}")
+        return texts
+
+    def background_reminders(self) -> None:
+        try:
+            self.send_reminders()
+        except Exception:
+            log.exception("reminders failed")
+
+    def read_sent_mail(self) -> None:
+        """Promises from sent mail; the writing style the first time sent mail is there."""
+        if self._reminders is not None:
+            self._reminders.scan_sent()
+        if self._thinking is not None and not self._thinking.style():
+            self._thinking.learn_style()
+
+    def background_promises(self) -> None:
+        try:
+            self.read_sent_mail()
+        except Exception:
+            log.exception("reading sent mail failed")
+
+    def weekly(self) -> list[str]:
+        """The Friday summaries: the team pulse (and, when wired, the activity report)."""
+        texts = []
+        if self._pulse is not None:
+            texts.append(self._pulse.weekly())
+        if self._activity is not None:
+            texts.append(self._activity.weekly())
+        if self._thinking is not None:
+            # Writing changes slowly; refreshing the style weekly keeps drafts current.
+            self._thinking.learn_style()
+        if self._notices is not None:
+            for text in texts:
+                self._notices.tell(text)
+        return texts
+
+    def background_weekly(self) -> None:
+        try:
+            self.weekly()
+        except Exception:
+            log.exception("weekly summary failed")
+
 
 def build_scheduler(jobs: AssistantJobs, app_config: AppConfig) -> BackgroundScheduler:
     tz = app_config.tz
@@ -139,4 +227,31 @@ def build_scheduler(jobs: AssistantJobs, app_config: AppConfig) -> BackgroundSch
         IntervalTrigger(minutes=FOLLOWUP_MINUTES, timezone=tz),
         id="followups",
     )
+    scheduler.add_job(
+        jobs.background_reminders,
+        IntervalTrigger(minutes=REMINDER_CHECK_MINUTES, timezone=tz),
+        id="reminders",
+    )
+    scheduler.add_job(
+        jobs.background_promises,
+        IntervalTrigger(hours=SENT_SCAN_HOURS, timezone=tz),
+        id="promises",
+    )
+    weekly = app_config.workday
+    scheduler.add_job(
+        jobs.background_weekly,
+        CronTrigger(
+            day_of_week=weekly.weekly_day,
+            hour=weekly.weekly_time.hour,
+            minute=weekly.weekly_time.minute,
+            timezone=tz,
+        ),
+        id="weekly",
+    )
+    if app_config.workday.prep_minutes_before:
+        scheduler.add_job(
+            jobs.background_preps,
+            IntervalTrigger(minutes=PREP_CHECK_MINUTES, timezone=tz),
+            id="meeting_prep",
+        )
     return scheduler

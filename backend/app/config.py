@@ -126,6 +126,20 @@ class BriefingConfig(_Strict):
         return self.max_spoken_seconds * self.words_per_minute // 60
 
 
+class WorkdayConfig(_Strict):
+    """The CEO's working hours, for spotting a day with no time to think."""
+
+    start: time = time(9, 0)
+    end: time = time(18, 0)
+    # A day without a free block this long gets a "no focus time" warning.
+    focus_minutes: int = Field(default=90, ge=15, le=480)
+    # Meeting prep is sent this many minutes before a meeting; 0 turns it off.
+    prep_minutes_before: int = Field(default=10, ge=0, le=120)
+    # The weekly team pulse and activity report.
+    weekly_day: Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"] = "fri"
+    weekly_time: time = time(17, 0)
+
+
 class SchedulerConfig(_Strict):
     # Background sync + P1 alert check; 0 turns the periodic sync off.
     sync_interval_minutes: int = Field(default=15, ge=0, le=24 * 60)
@@ -145,6 +159,7 @@ class AppConfig(_Strict):
     ingest: IngestConfig = Field(default_factory=IngestConfig)
     briefing: BriefingConfig = Field(default_factory=BriefingConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
+    workday: WorkdayConfig = Field(default_factory=WorkdayConfig)
 
     @field_validator("timezone")
     @classmethod

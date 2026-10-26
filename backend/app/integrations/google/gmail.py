@@ -55,6 +55,11 @@ class GmailAdapter(EmailAdapter):
         body = self._http.get_json("/messages", params={"q": query, "maxResults": str(limit)})
         return [_message(self._get_metadata(m["id"])) for m in body.get("messages", [])[:limit]]
 
+    def list_sent(self, since: datetime, limit: int = 50) -> list[EmailMessage]:
+        q = f"in:sent after:{int(since.timestamp())}"
+        body = self._http.get_json("/messages", params={"q": q, "maxResults": str(limit)})
+        return [_message(self._get_metadata(m["id"])) for m in body.get("messages", [])[:limit]]
+
     def get(self, message_id: str) -> EmailMessage:
         return _message(self._get_metadata(message_id))
 

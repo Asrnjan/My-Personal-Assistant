@@ -17,7 +17,7 @@ from app.audit import audit
 from app.clock import Clock
 from app.db.models import DecisionRow, FollowUpRow, ItemRow
 from app.domain.delegate import Delegate
-from app.domain.enums import Channel, FollowUpState
+from app.domain.enums import Channel, FollowUpState, ItemStatus
 from app.engine.approval import ApprovalPolicy, Level
 from app.engine.briefing import clean_title
 from app.engine.contacts import all_delegates, display_names
@@ -33,6 +33,10 @@ from app.llm.schemas import AckClassification
 log = logging.getLogger(__name__)
 
 NUDGE_BEFORE = timedelta(hours=24)
+# Work with no deadline that nobody acknowledged gets a nudge after this long, and a
+# second one after as long again; never more than MAX_NUDGES.
+NUDGE_UNDATED_AFTER = timedelta(hours=48)
+MAX_NUDGES = 2
 _OPEN = (FollowUpState.PENDING, FollowUpState.NUDGED, FollowUpState.OVERDUE)
 _ACK_WORDS = re.compile(
     r"\b(accept(ed)?|ok(ay)?|on it|will do|got it|sure|happy to|i'?ll (do|handle|take))\b",
@@ -59,6 +63,7 @@ class FollowUpReport:
     questions: int = 0
     nudged: int = 0
     overdue: int = 0
+    checked_in: int = 0
 
 
 class FollowUpService:
@@ -343,6 +348,150 @@ class FollowUpService:
             self._notices.tell(text)
         return sent
 
+    def _send(
+        self,
+        s: Session,
+        notifiers: list[Notifier],
+        fu: FollowUpRow,
+        dec: DecisionRow,
+        delegate: Delegate,
+        text: str,
+        kind: str,
+    ) -> bool:
+        """Send ``text`` to the delegate on every channel the delegation went out on."""
+        delivered = False
+        for notifier in notifiers:
+            ref = (fu.refs or {}).get(notifier.channel.value)
+            if ref is None:
+                continue
+            try:
+                notifier.send_nudge(delegate, text, ref)
+            except Exception as exc:
+                audit(
+                    s,
+                    f"{kind}.{notifier.channel.value}",
+                    "failed",
+                    target=fu.id,
+                    error=str(exc)[:300],
+                )
+                continue
+            delivered = True
+            audit(s, f"{kind}.{notifier.channel.value}", "ok", target=fu.id, decision_id=dec.id)
+        return delivered
+
+    def renudge(self) -> int:
+        """Chase work nobody acknowledged: undated work after two days, and a second
+        reminder two days after the first. The CEO isn't bothered unless it goes overdue."""
+        now = self._clock()
+        if self._policy.level("nudge_delegate") != Level.AUTO:
+            return 0
+        notifiers = self._notifiers_factory(self._adapters_factory())
+        sent = 0
+        with self._sessions.begin() as s:
+            delegates = {d.id: d for d in all_delegates(s)}
+            rows = s.execute(
+                select(FollowUpRow, DecisionRow, ItemRow)
+                .join(DecisionRow, FollowUpRow.decision_id == DecisionRow.id)
+                .join(ItemRow, DecisionRow.item_id == ItemRow.id)
+                .where(FollowUpRow.state.in_([FollowUpState.PENDING, FollowUpState.NUDGED]))
+            ).all()
+            for fu, dec, item in rows:
+                delegate = delegates.get(dec.delegate_id or "")
+                if delegate is None or fu.nudges_sent >= MAX_NUDGES:
+                    continue
+                since = fu.last_nudge_at or fu.sent_at or fu.created_at
+                undated_first = fu.due is None and fu.last_nudge_at is None
+                again = fu.last_nudge_at is not None
+                if not (undated_first or again) or now - since < NUDGE_UNDATED_AFTER:
+                    continue
+                first = delegate.full_name.split()[0]
+                text = (
+                    f'Hi {first}, just checking you saw "{clean_title(item.title)}". '
+                    "Can you confirm you have it?"
+                )
+                fu.last_nudge_at = now
+                if self._send(s, notifiers, fu, dec, delegate, text, "nudge"):
+                    fu.state = FollowUpState.NUDGED
+                    fu.nudges_sent += 1
+                    sent += 1
+        return sent
+
+    def check_in(self) -> int:
+        """Ask for a status on accepted work a day before it's due, and once more if it
+        passes its deadline without being finished (telling the CEO only then)."""
+        now = self._clock()
+        if self._policy.level("nudge_delegate") != Level.AUTO:
+            return 0
+        notifiers = self._notifiers_factory(self._adapters_factory())
+        sent = 0
+        tell: list[str] = []
+        with self._sessions.begin() as s:
+            delegates = {d.id: d for d in all_delegates(s)}
+            names = display_names(list(delegates.values()))
+            rows = s.execute(
+                select(FollowUpRow, DecisionRow, ItemRow)
+                .join(DecisionRow, FollowUpRow.decision_id == DecisionRow.id)
+                .join(ItemRow, DecisionRow.item_id == ItemRow.id)
+                .where(
+                    FollowUpRow.state == FollowUpState.ACKNOWLEDGED, FollowUpRow.due.is_not(None)
+                )
+            ).all()
+            today = now.astimezone(self._tz).date()
+            for fu, dec, item in rows:
+                delegate = delegates.get(dec.delegate_id or "")
+                if delegate is None or fu.due is None:
+                    continue
+                last = fu.last_nudge_at
+                title = clean_title(item.title)
+                first = delegate.full_name.split()[0]
+                when = spoken_day(fu.due.astimezone(self._tz).date(), today)
+                if now >= fu.due and (last is None or last < fu.due):
+                    text = f'Hi {first}, "{title}" was due {when}. Where are you with it?'
+                    name = names.get(delegate.id, delegate.full_name)
+                    tell.append(
+                        f"{title} from {name} is past its deadline; I've asked for an update."
+                    )
+                elif fu.due - NUDGE_BEFORE <= now < fu.due and (
+                    last is None or (fu.acknowledged_at and last < fu.acknowledged_at)
+                ):
+                    text = f'Hi {first}, how is "{title}" going? It\'s due {when}.'
+                else:
+                    continue
+                fu.last_nudge_at = now
+                if self._send(s, notifiers, fu, dec, delegate, text, "checkin"):
+                    sent += 1
+        for text in tell:
+            self._notices.tell(text)
+        return sent
+
+    def close_finished(self) -> int:
+        """Delegations whose work is done (closed at its source, or by the CEO) are closed."""
+        with self._sessions.begin() as s:
+            rows = s.execute(
+                select(FollowUpRow, DecisionRow, ItemRow)
+                .join(DecisionRow, FollowUpRow.decision_id == DecisionRow.id)
+                .join(ItemRow, DecisionRow.item_id == ItemRow.id)
+                .where(
+                    FollowUpRow.state != FollowUpState.CLOSED,
+                    ItemRow.status.in_([ItemStatus.DONE, ItemStatus.DROPPED]),
+                )
+            ).all()
+            for fu, dec, _item in rows:
+                fu.state = FollowUpState.CLOSED
+                audit(s, "followup.done", "ok", target=fu.id, decision_id=dec.id)
+            return len(rows)
+
+    def finish(self, item_id: str) -> str | None:
+        """The CEO says delegated work is done. Returns its title, or None."""
+        with self._sessions.begin() as s:
+            item = s.get(ItemRow, item_id)
+            if item is None:
+                return None
+            item.status = ItemStatus.DONE
+            title = clean_title(item.title)
+        self.close_finished()
+        return title
+
     def mark_overdue(self) -> int:
         now = self._clock()
         tell: list[str] = []
@@ -370,7 +519,9 @@ class FollowUpService:
         return len(tell)
 
     def run(self) -> FollowUpReport:
+        self.close_finished()
         report = self.check_replies()
-        report.nudged = self.nudge_due()
+        report.nudged = self.nudge_due() + self.renudge()
         report.overdue = self.mark_overdue()
+        report.checked_in = self.check_in()
         return report

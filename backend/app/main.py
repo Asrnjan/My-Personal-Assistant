@@ -7,12 +7,14 @@ import mimetypes
 import threading
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app import __version__
 from app.api import (
@@ -35,17 +37,28 @@ from app.clock import Clock, utc_now
 from app.config import Settings, get_settings, load_app_config
 from app.db.session import make_engine, make_session_factory
 from app.engine.actions import ActionService
+from app.engine.activity import Activity
 from app.engine.approval import load_policy
 from app.engine.briefing import Briefer
 from app.engine.contacts import load_contacts, seed_delegates
 from app.engine.conversation import ConversationAgent
 from app.engine.delegation import DelegationService
 from app.engine.followup import FollowUpService
+from app.engine.insights import day_insights
 from app.engine.learning import LearningService
+from app.engine.memory import Memory
+from app.engine.notes import MeetingNotes
 from app.engine.notices import Notices
+from app.engine.permissions import Permissions
+from app.engine.prep import MeetingPrep
 from app.engine.priority import PriorityEngine
+from app.engine.pulse import TeamPulse
+from app.engine.reminders import Reminders, unanswered_senders
 from app.engine.rubric import load_rubric
+from app.engine.skills import Skills
 from app.engine.sync import SyncService
+from app.engine.thinking import Thinking
+from app.engine.triage import InboxTriage
 from app.events import EventBus
 from app.integrations.connections import ConnectionService
 from app.integrations.notify.base import Notifier
@@ -157,7 +170,40 @@ def create_app(
         )
 
     budget.set_on_exceeded(budget_exceeded)
-    briefer = Briefer(session_factory, app_config, clock)
+    reminders = Reminders(session_factory, llm, adapters, tz, clock)
+    memory = Memory(session_factory, clock)
+    thinking = Thinking(session_factory, llm, adapters, memory, clock)
+
+    def morning_notes(s: Session, on: date, now: datetime) -> list[str]:
+        notes = day_insights(s, on, now, tz, app_config.workday).sentences()
+        notes += reminders.due_on(s, on)
+        waiting = unanswered_senders(s)
+        if waiting:
+            who, n = waiting[0]
+            notes.append(f"{who} has written {n} times without an answer.")
+        return notes
+
+    briefer = Briefer(session_factory, app_config, clock, morning_notes=morning_notes)
+    skills = Skills(
+        prep=MeetingPrep(
+            session_factory,
+            llm,
+            adapters,
+            tz,
+            clock,
+            minutes_before=app_config.workday.prep_minutes_before,
+            facts=memory.recall,
+        ),
+        triage=InboxTriage(session_factory, llm, style=thinking.style),
+        notes=MeetingNotes(session_factory, llm, tz, clock),
+        reminders=reminders,
+        workday=app_config.workday,
+        pulse=TeamPulse(session_factory, tz, clock),
+        memory=memory,
+        thinking=thinking,
+        activity=Activity(session_factory, clock),
+        permissions=Permissions(session_factory, policy, clock),
+    )
     learning = LearningService(session_factory, clock)
     delegation = DelegationService(llm, adapters, notifiers, tz, clock)
     actions = ActionService(
@@ -172,6 +218,7 @@ def create_app(
     followups = FollowUpService(
         session_factory, llm, adapters, notifiers, policy, notices, tz, clock
     )
+    skills.followups = followups
     agent = ConversationAgent(
         session_factory,
         llm,
@@ -184,8 +231,22 @@ def create_app(
         tz,
         clock,
         name=app_config.assistant_name,
+        skills=skills,
     )
-    jobs = AssistantJobs(sync_service, briefer, bus, session_factory, followups, actions)
+    jobs = AssistantJobs(
+        sync_service,
+        briefer,
+        bus,
+        session_factory,
+        followups,
+        actions,
+        prep=skills.prep,
+        notices=notices,
+        reminders=reminders,
+        pulse=skills.pulse,
+        thinking=thinking,
+        activity=skills.activity,
+    )
 
     stt = stt or WhisperSTT(app_config.stt)
     tts = tts or build_tts(app_config.tts, settings.piper_voices_dir)

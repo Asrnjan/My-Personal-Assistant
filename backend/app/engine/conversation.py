@@ -44,13 +44,17 @@ from app.engine.delegation import (
     reachable_channels,
     spoken_day,
 )
+from app.engine.insights import first_free_slot
 from app.engine.learning import LearningService, preferences_block
+from app.engine.prep import upcoming_meeting
 from app.engine.priority import prescore
+from app.engine.reminders import unanswered_senders
 from app.engine.rubric import Rubric
+from app.engine.skills import SKILL_TOOLS, Skills
 from app.integrations.base import Chat
 from app.integrations.http import AuthExpiredError, IntegrationError
 from app.llm.client import LLMClient, Task
-from app.llm.errors import BudgetExceededError, LLMError
+from app.llm.errors import BudgetExceededError, LLMAuthError, LLMError
 from app.llm.prompts import load_prompt, untrusted
 
 log = logging.getLogger(__name__)
@@ -509,8 +513,10 @@ class ConversationAgent:
         clock: Clock,
         new_id: Callable[[], str] = lambda: uuid.uuid4().hex,
         name: str = "Atlas",
+        skills: Skills | None = None,
     ) -> None:
         self.name = name
+        self.skills = skills or Skills()
         self._sessions = session_factory
         self._llm = llm
         self._actions = actions
@@ -749,13 +755,20 @@ class ConversationAgent:
             {"name": d.full_name, "aliases": d.aliases, "owns": d.ownership_areas}
             for d in delegates
         ]
-        return [
+        blocks = [
             load_prompt("conversation").text,
             f"Your name is {self.name}. The CEO may start a request with your name; "
             "that is just how they get your attention.",
             "The CEO's team:\n" + json.dumps(team, sort_keys=True),
             "CEO preferences:\n" + ("\n".join(f"- {p}" for p in prefs) or "- none yet"),
         ]
+        facts = self.skills.memory.all() if self.skills.memory else []
+        if facts:
+            blocks.append("Things the CEO asked you to remember:\n" + "\n".join(facts))
+        style = self.skills.thinking.style() if self.skills.thinking else ""
+        if style:
+            blocks.append("How the CEO writes (use it for any message you draft):\n" + style)
+        return blocks
 
     def _ask_model(self, state: _State, turn: _Turn) -> str:
         # Plain dicts; the SDK validates the shape when the request is sent.
@@ -776,7 +789,7 @@ class ConversationAgent:
                     system=system,
                     messages=messages,
                     max_tokens=1500,
-                    tools=TOOLS,
+                    tools=[*TOOLS, *SKILL_TOOLS],
                 )
                 texts = [b.text for b in response.content if b.type == "text"]
                 uses = [b for b in response.content if b.type == "tool_use"]
@@ -800,6 +813,12 @@ class ConversationAgent:
             return (
                 "I've reached this month's AI budget, so I can only handle simple commands: "
                 "brief me, yes, cancel, or skip one."
+            )
+        except LLMAuthError as exc:
+            log.warning("conversation call failed: %s", exc)
+            return (
+                "I can't reach Claude: its key is missing or wrong. Add your Claude key in the "
+                "Apps tab. Until then I can only do brief me, yes, cancel and skip."
             )
         except LLMError as exc:
             log.warning("conversation call failed: %s", exc)
@@ -895,6 +914,12 @@ class ConversationAgent:
         params: dict[str, Any],
     ) -> dict[str, Any]:
         action = self._actions.propose(kind, item_id, readback, params, state.id)
+        permissions = self.skills.permissions
+        if permissions is not None and permissions.allows(kind, params):
+            # The CEO allowed this for their team: no read-back, it just happens.
+            result = self._actions.confirm(action.id, ApprovedVia.AUTO)
+            turn.executed.append(result)
+            return {"status": "done" if result.ok else "failed", "result": result.message}
         turn.created.append(action.id)
         state.awaiting = [*[a for a in state.awaiting if a != action.id], action.id]
         return {"status": "pending", "action_id": action.id, "readback": readback}
@@ -1327,6 +1352,260 @@ class ConversationAgent:
         if isinstance(found, dict):
             return found
         return {"status": "done", "message": self._learning.set_band(str(found), band)}
+
+    # -- chief-of-staff skills ------------------------------------------------------
+
+    def _tool_prep_meeting(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.prep is None:
+            return {"error": "Meeting prep isn't available."}
+        ref = str(args.get("item_ref", "") or "").strip()
+        with self._sessions() as s:
+            if ref:
+                found = self._resolve(s, ref, state)
+                if isinstance(found, str):
+                    return {"error": found}
+                item: ItemRow | None = found
+            else:
+                item = upcoming_meeting(s, self._clock())
+            if item is None:
+                return {"error": "You have no more meetings today."}
+            if item.kind != ItemKind.MEETING:
+                return {"error": f"{clean_title(item.title)} isn't a meeting."}
+            item_id = item.id
+        return {"prep": self.skills.prep.prepare(item_id)}
+
+    def _tool_triage_inbox(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.triage is None:
+            return {"error": "Inbox triage isn't available."}
+        result = self.skills.triage.run()
+        readbacks = []
+        for d in result.drafts:
+            readback = (
+                f"Replying to {d.to} about {clean_title(d.subject)}, saying: {d.text} Confirm?"
+            )
+            params = {
+                "title": f"Reply: {d.subject}",
+                "source": d.source,
+                "message_id": d.message_id,
+                "to": [d.to],
+                "to_name": d.to,
+                "subject": d.subject,
+                "text": d.text,
+            }
+            self._propose(state, turn, ActionKind.REPLY_EMAIL, None, readback, params)
+            readbacks.append(readback)
+        return {"summary": result.summary(), "drafted_replies": readbacks}
+
+    def _tool_capture_meeting_notes(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.notes is None:
+            return {"error": "Meeting notes aren't available."}
+        notes = str(args.get("notes", "")).strip()
+        if not notes:
+            return self._ask(turn, "What were the notes?")
+        meeting = str(args.get("meeting", "") or "").strip()
+        summary = self.skills.notes.read(notes, meeting)
+        tracked = self.skills.notes.track(summary, meeting)
+        readbacks: list[str] = []
+        unassigned: list[str] = []
+        with self._sessions() as s:
+            resolver = NameResolver(all_delegates(s))
+            for action in tracked:
+                match = resolver.resolve(action.owner) if action.owner else None
+                item = s.get(ItemRow, action.item_id)
+                if match is None or match.delegate is None or item is None:
+                    unassigned.append(action.task)
+                    continue
+                proposal = self._delegate_proposal(
+                    s,
+                    item,
+                    match.delegate.id,
+                    action.due.isoformat() if action.due else None,
+                    f"Agreed in {meeting or 'our meeting'}.",
+                    "full_ownership",
+                )
+                if isinstance(proposal, str):
+                    unassigned.append(action.task)
+                    continue
+                readback, params = proposal
+                self._propose(state, turn, ActionKind.DELEGATE, item.id, readback, params)
+                readbacks.append(readback)
+        return {
+            "summary": summary.summary,
+            "decisions": summary.decisions,
+            "delegations_to_confirm": readbacks,
+            "on_your_list_with_no_owner": unassigned,
+        }
+
+    def _when(self, args: dict[str, Any], key: str = "start_time") -> datetime:
+        day = date.fromisoformat(str(args.get("date", "")))
+        raw = str(args.get(key) or "09:00")
+        return datetime.combine(day, time.fromisoformat(raw), tzinfo=self._tz)
+
+    def _tool_block_focus_time(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        workday = self.skills.workday
+        minutes = int(args.get("duration_minutes") or (workday.focus_minutes if workday else 90))
+        day = date.fromisoformat(str(args.get("date", "")))
+        if args.get("start_time"):
+            start = self._when(args)
+        else:
+            if workday is None:
+                return {"error": "Say a start time."}
+            with self._sessions() as s:
+                found = first_free_slot(s, day, self._clock(), self._tz, workday, minutes)
+            if found is None:
+                return {"error": f"There's no free {minutes} minutes that day. Pick a time."}
+            start = found
+        end = start + timedelta(minutes=minutes)
+        today = self._clock().astimezone(self._tz).date()
+        readback = (
+            f"Holding {spoken_time(start, self._tz)} to {spoken_time(end, self._tz)} "
+            f"{spoken_day(day, today)} as focus time. Confirm?"
+        )
+        params = {
+            "title": "Focus time",
+            "subject": "Focus time",
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "attendees": [],
+            "online": False,
+        }
+        return self._propose(state, turn, ActionKind.BOOK_MEETING, None, readback, params)
+
+    def _tool_move_meeting(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        start = self._when(args)
+        today = self._clock().astimezone(self._tz).date()
+
+        def propose(_s: Session, item: ItemRow) -> Any:
+            if item.kind != ItemKind.MEETING:
+                return {"error": "That item is not a meeting."}
+            length = (item.end - item.start) if item.start and item.end else timedelta(hours=1)
+            end = start + length
+            readback = (
+                f"Moving {clean_title(item.title)} to {spoken_day(start.date(), today)} at "
+                f"{spoken_time(start, self._tz)}; the attendees get the update. Confirm?"
+            )
+            params = {"start": start.isoformat(), "end": end.isoformat()}
+            return self._propose(state, turn, ActionKind.MOVE_MEETING, item.id, readback, params)
+
+        return self._with_item(state, args, propose)
+
+    def _tool_remind_me(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.reminders is None:
+            return {"error": "Reminders aren't available."}
+        text = " ".join(str(args.get("text", "")).split())
+        if not text:
+            return self._ask(turn, "What should I remind you of?")
+        at = self._when(args, "time")
+        if at <= self._clock():
+            return {"error": "That time has passed. When should I remind you?"}
+        self.skills.reminders.add(text, at)
+        today = self._clock().astimezone(self._tz).date()
+        return {
+            "status": "saved",
+            "when": f"{spoken_day(at.date(), today)} at {spoken_time(at, self._tz)}",
+        }
+
+    def _tool_list_reminders(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.reminders is None:
+            return {"error": "Reminders aren't available."}
+        far = self._clock().astimezone(self._tz).date() + timedelta(days=60)
+        with self._sessions() as s:
+            open_items = self.skills.reminders.due_on(s, far)
+            waiting = [f"{who} has {n} emails waiting for you" for who, n in unanswered_senders(s)]
+        return {"open_promises_and_reminders": open_items, "people_waiting": waiting}
+
+    def _tool_waiting_on(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.pulse is None:
+            return {"error": "That isn't available."}
+        waiting = self.skills.pulse.waiting_on()
+        return {"waiting_on": waiting or ["Nothing: no delegated work is open."]}
+
+    def _tool_team_pulse(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.pulse is None:
+            return {"error": "That isn't available."}
+        return {"pulse": self.skills.pulse.weekly()}
+
+    def _tool_delegation_done(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.followups is None:
+            return {"error": "That isn't available."}
+        followups = self.skills.followups
+
+        def finish(_s: Session, item: ItemRow) -> Any:
+            return item.id
+
+        found = self._with_item(state, args, finish)
+        if isinstance(found, dict):
+            return found
+        title = followups.finish(str(found))
+        return {"status": "closed", "title": title}
+
+    def _tool_remember(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.memory is None:
+            return {"error": "Memory isn't available."}
+        fact = str(args.get("fact", "")).strip()
+        if not fact:
+            return self._ask(turn, "What should I remember?")
+        return {"status": "remembered", "fact": self.skills.memory.remember(fact)}
+
+    def _tool_forget(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.memory is None:
+            return {"error": "Memory isn't available."}
+        return {"forgotten": self.skills.memory.forget(str(args.get("fact", "")))}
+
+    def _tool_recall(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.memory is None:
+            return {"error": "Memory isn't available."}
+        found = self.skills.memory.recall([str(args.get("about", ""))])
+        return {"facts": found or ["Nothing remembered about that."]}
+
+    def _tool_think_through(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.thinking is None:
+            return {"error": "That isn't available."}
+        question = str(args.get("question", "")).strip() or turn.text
+        return {"answer": self.skills.thinking.think_through(question)}
+
+    def _tool_write_draft(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.thinking is None:
+            return {"error": "That isn't available."}
+        draft = self.skills.thinking.write(
+            str(args.get("kind", "") or "note"), str(args.get("brief", "") or turn.text)
+        )
+        return {"draft": draft}
+
+    def _tool_what_did_you_do(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.activity is None:
+            return {"error": "That isn't available."}
+        done = self.skills.activity.lines(int(args.get("days") or 7))
+        return {"done": done or ["Nothing yet."]}
+
+    def _tool_undo(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.activity is None:
+            return {"error": "That isn't available."}
+        result = self.skills.activity.undo(str(args.get("what", "") or ""))
+        if result.propose is not None:
+            item_id, readback, params = result.propose
+            return self._propose(
+                state, turn, ActionKind.MOVE_MEETING, item_id, readback, dict(params)
+            )
+        return {"status": "undone" if result.done else "not_undone", "message": result.message}
+
+    def _tool_set_permission(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.permissions is None:
+            return {"error": "That isn't available."}
+        kind = ActionKind(str(args.get("action", "")))
+        self.skills.permissions.set(kind, "team" if args.get("mode") == "team" else "ask")
+        return {"status": "saved", "now": self.skills.permissions.describe()}
+
+    def _tool_list_permissions(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.permissions is None:
+            return {"error": "That isn't available."}
+        return {"permissions": self.skills.permissions.describe()}
+
+    def _tool_reminder_done(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.reminders is None:
+            return {"error": "Reminders aren't available."}
+        closed = self.skills.reminders.done(str(args.get("text", "")))
+        return {"closed": closed}
 
     def _tool_set_preference(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
         pref = self._learning.add_rule(str(args.get("rule", "")))

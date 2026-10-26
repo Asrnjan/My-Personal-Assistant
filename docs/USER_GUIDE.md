@@ -15,7 +15,13 @@ Answer with:
 - **"Cancel"**: nothing happens.
 - **"Tell me more"**: the rest of the list, if the brief was trimmed.
 
-**During the day.** When something new and important arrives (a P1), you get one alert. Accepted delegations and questions from your team come to you as short notices.
+The brief also warns you about meetings that overlap, a day with no free block for deep work, delegated work that is late, promises you made that are due, and people who have written several times without an answer.
+
+**During the day.** When something new and important arrives (a P1), you get one alert. Accepted delegations and questions from your team come to you as short notices. About 10 minutes before each meeting you get a short prep: who is in it, what is open between you, recent emails, and what to push for (`workday.prep_minutes_before` in `config/config.yaml`).
+
+**Your team, chased for you.** Work nobody acknowledged is chased (twice at most); accepted work gets a "how is it going?" the day before it's due, and a status request if it slips. You only hear about it when something is late or someone has a question.
+
+**Friday at 5 pm.** The team pulse (who finished what, what's open, what slipped, who is overloaded) and a report of everything Atlas did for you that week, which you can undo.
 
 **18:30, the evening wrap-up.** What's still open, who accepted, who hasn't answered yet, and an offer to move unfinished items to tomorrow.
 
@@ -34,6 +40,26 @@ Answer with:
 | "Drop the newsletter" | Removes it from your list |
 | "Make this top priority" | Raises it to P1 and remembers you care about this kind of thing |
 | "From now on, anything from the board is P1" | Saved as a standing rule |
+
+### Chief-of-staff requests
+
+| You say | What happens |
+|---|---|
+| "Prep me for my next meeting" / "Prep me for my 3 pm" | Who is in it, what is open between you, and what to push for |
+| "Triage my inbox" | Emails sorted into needs-you, delegate and FYI, with drafted replies read back; say yes to send |
+| "Notes from the pricing review: Rahul will send margins by Monday..." | A summary, the decisions, and each action item offered as a delegation |
+| "Block focus time this afternoon" | Holds the first free gap, after your yes |
+| "Move my 4 pm to tomorrow at 10" | Moves it and updates the attendees, after your yes |
+| "Remind me to call the auditor at 3" | A reminder on your phone at 3 |
+| "What did I promise?" / "What am I forgetting?" | Promises found in your sent mail, your reminders, and people waiting on you |
+| "What am I waiting on?" | Delegated work, late first |
+| "How's the team doing?" | The team pulse |
+| "Rahul finished the vendor review" | Closes the follow-up |
+| "Remember that Acme's renewal is in March" | Remembered and used in prep, decisions and drafts; "forget that..." removes it |
+| "Should I hire a second sales lead?" | A recommendation, pros and cons, the main risk, and what to find out first, from your own context |
+| "Draft a LinkedIn post about our Pune office" | A draft in your writing style (learned from your sent mail) |
+| "What did you do this week?" / "Undo that" | Everything it did; undo reopens items, reverts team changes, or moves a meeting back after a yes. Sent messages can't be unsent. |
+| "Send emails to my team without asking" | Emails to people on your team go straight away; anyone else still needs your yes. "Always ask before emailing" switches it back. Works for emails, replies, Teams messages, meetings and delegations. |
 
 It won't pay, buy, refund, approve spending or delete anything. Ask it to delegate that work to the right person instead ("Ask Meera to pay the Acme invoice").
 

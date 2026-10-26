@@ -166,14 +166,24 @@ def _fit(head: str, sections: list[_Section], tail: str, max_words: int) -> str:
 # --- the briefer --------------------------------------------------------------
 
 
+# Extra sentences for the morning brief (overlapping meetings, no focus time, late team
+# work); given the session, the day and now.
+MorningNotes = Callable[[Session, date, datetime], list[str]]
+
+
 class Briefer:
     def __init__(
-        self, session_factory: sessionmaker[Session], app_config: AppConfig, clock: Clock
+        self,
+        session_factory: sessionmaker[Session],
+        app_config: AppConfig,
+        clock: Clock,
+        morning_notes: MorningNotes | None = None,
     ) -> None:
         self._sessions = session_factory
         self._config = app_config
         self._tz = app_config.tz
         self._clock = clock
+        self._morning_notes = morning_notes
 
     def today(self) -> date:
         return self._clock().astimezone(self._tz).date()
@@ -279,6 +289,7 @@ class Briefer:
         with self._sessions() as s:
             names = self._names(s)
             rows = self._order(self._agenda(s, on, now))
+            notes = self._morning_notes(s, on, now) if self._morning_notes else []
 
         by_band: dict[PriorityBand | None, list[ItemRow]] = {}
         for r in rows:
@@ -333,6 +344,9 @@ class Briefer:
                 lambda n: f"{plural(n, 'item')} {'is' if n == 1 else 'are'} not scored yet.",
             ),
         ]
+        # The notes go first so trimming for time never drops them.
+        if notes:
+            head = " ".join([head, *notes])
         tail = "Shall I go ahead?" if delegate or decline or drop else ""
         text = _fit(head, sections, tail, self._config.briefing.max_words)
 

@@ -24,6 +24,14 @@ briefing:
 scheduler:
   sync_interval_minutes: 15 # background sync + P1 alerts; 0 turns it off
 
+workday:
+  start: "09:00"
+  end: "18:00"
+  focus_minutes: 90        # warn when the day has no free block this long
+  prep_minutes_before: 10  # meeting prep this long before each meeting; 0 = off
+  weekly_day: fri          # team pulse and activity report
+  weekly_time: "17:00"
+
 models:
   bulk: claude-haiku-5-5          # scoring and classification
   conversation: claude-sonnet-5-5 # dialogue, delegation briefs, hard calls

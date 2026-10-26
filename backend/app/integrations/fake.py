@@ -37,8 +37,14 @@ class FakeCalendar(CalendarAdapter):
     declined: list[tuple[str, str]] = field(default_factory=list)
     added: list[tuple[str, str]] = field(default_factory=list)
     created: list[NewEvent] = field(default_factory=list)
+    moved: list[tuple[str, datetime, datetime]] = field(default_factory=list)
     fail_with: IntegrationError | None = None
     sync_calls: int = 0
+
+    def move_event(self, event_id: str, start: datetime, end: datetime) -> None:
+        if self.fail_with:
+            raise self.fail_with
+        self.moved.append((event_id, start, end))
 
     def sync_events(
         self, start: datetime, end: datetime, cursor: str | None = None
@@ -80,6 +86,8 @@ class FakeMail(EmailAdapter):
     inbox: list[EmailMessage] = field(default_factory=list)
     threads: dict[str, list[EmailMessage]] = field(default_factory=dict)
     sent: list[OutboundEmail] = field(default_factory=list)
+    # What the CEO sent from this mailbox, for list_sent.
+    outbox: list[EmailMessage] = field(default_factory=list)
     fail_with: IntegrationError | None = None
     since_calls: list[datetime] = field(default_factory=list)
 
@@ -111,6 +119,10 @@ class FakeMail(EmailAdapter):
             if all(w in f"{m.subject} {m.sender} {m.snippet}".lower() for w in words)
         ]
         found.sort(key=lambda m: m.received_at.timestamp() if m.received_at else 0, reverse=True)
+        return found[:limit]
+
+    def list_sent(self, since: datetime, limit: int = 50) -> list[EmailMessage]:
+        found = [m for m in self.outbox if m.received_at is None or m.received_at >= since]
         return found[:limit]
 
     def get(self, message_id: str) -> EmailMessage:

@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+import anthropic
+import httpx
 import pytest
 from anthropic.types import Message
 
@@ -10,6 +12,7 @@ from app.domain.enums import PriorityBand
 from app.llm.client import FALLBACK_BETA, AnthropicSender, LLMClient, Task
 from app.llm.errors import (
     BudgetExceededError,
+    LLMError,
     LLMOutputError,
     LLMRefusalError,
     LLMTruncatedError,
@@ -170,3 +173,50 @@ def test_anthropic_sender_uses_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     sender.send({"model": "m"})
     sender.send({"model": "m"})
     assert created == [{"api_key": None, "max_retries": 4}]
+
+
+@pytest.mark.parametrize(
+    ("raised", "expected"),
+    [
+        (TypeError("Could not resolve authentication method."), "LLMAuthError"),
+        (
+            anthropic.AuthenticationError(
+                "bad key",
+                response=httpx.Response(401, request=httpx.Request("POST", "https://x")),
+                body=None,
+            ),
+            "LLMAuthError",
+        ),
+        (
+            anthropic.APIConnectionError(request=httpx.Request("POST", "https://x")),
+            "LLMUnavailableError",
+        ),
+    ],
+)
+def test_sender_turns_api_failures_into_llm_errors(
+    monkeypatch: pytest.MonkeyPatch, raised: Exception, expected: str
+) -> None:
+    class Failing:
+        def __init__(self, **_kwargs: object) -> None:
+            self.messages = self
+
+        def create(self, **_params: object) -> None:
+            raise raised
+
+    monkeypatch.setattr("app.llm.client.anthropic.Anthropic", Failing)
+    with pytest.raises(LLMError) as caught:
+        AnthropicSender(None, max_retries=0).send({"model": "m"})
+    assert type(caught.value).__name__ == expected
+
+
+def test_other_type_errors_are_not_hidden(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Broken:
+        def __init__(self, **_kwargs: object) -> None:
+            self.messages = self
+
+        def create(self, **_params: object) -> None:
+            raise TypeError("unexpected keyword")
+
+    monkeypatch.setattr("app.llm.client.anthropic.Anthropic", Broken)
+    with pytest.raises(TypeError):
+        AnthropicSender("k", max_retries=0).send({"model": "m"})

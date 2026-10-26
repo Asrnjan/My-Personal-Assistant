@@ -152,6 +152,10 @@ class CalendarAdapter(ABC):
     def create_event(self, event: NewEvent) -> CalendarEvent:
         """Book a meeting on the CEO's calendar and invite the attendees."""
 
+    def move_event(self, event_id: str, start: datetime, end: datetime) -> None:
+        """Move a meeting to a new time; attendees get the update."""
+        raise NotImplementedError("this calendar can't move meetings")
+
 
 class EmailAdapter(ABC):
     source: Source
@@ -175,6 +179,11 @@ class EmailAdapter(ABC):
     @abstractmethod
     def get(self, message_id: str) -> EmailMessage:
         """One message, so a reply can go to its sender."""
+
+    def list_sent(self, since: datetime, limit: int = 50) -> list[EmailMessage]:
+        """Messages the CEO sent since ``since``, newest first (for promises they made
+        and how they write). Adapters that can't read sent mail return nothing."""
+        return []
 
 
 class ChatAdapter(ABC):
