@@ -135,6 +135,9 @@ class WorkdayConfig(_Strict):
     focus_minutes: int = Field(default=90, ge=15, le=480)
     # Meeting prep is sent this many minutes before a meeting; 0 turns it off.
     prep_minutes_before: int = Field(default=10, ge=0, le=120)
+    # The weekly team pulse and activity report.
+    weekly_day: Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"] = "fri"
+    weekly_time: time = time(17, 0)
 
 
 class SchedulerConfig(_Strict):

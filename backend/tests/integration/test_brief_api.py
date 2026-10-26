@@ -110,6 +110,7 @@ def test_build_scheduler_jobs(api: TestClient) -> None:
         "meeting_prep",
         "reminders",
         "promises",
+        "weekly",
     }
     morning = {f.name: str(f) for f in found["morning_brief"].trigger.fields}
     assert morning["hour"] == "7" and morning["minute"] == "45"
@@ -128,6 +129,7 @@ def test_build_scheduler_jobs(api: TestClient) -> None:
         "followups",
         "reminders",
         "promises",
+        "weekly",
     }
     assert AppConfig().brief_times.morning == time(8, 0)
 

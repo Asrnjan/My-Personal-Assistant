@@ -49,6 +49,7 @@ from app.engine.notes import MeetingNotes
 from app.engine.notices import Notices
 from app.engine.prep import MeetingPrep
 from app.engine.priority import PriorityEngine
+from app.engine.pulse import TeamPulse
 from app.engine.reminders import Reminders, unanswered_senders
 from app.engine.rubric import load_rubric
 from app.engine.skills import Skills
@@ -190,6 +191,7 @@ def create_app(
         notes=MeetingNotes(session_factory, llm, tz, clock),
         reminders=reminders,
         workday=app_config.workday,
+        pulse=TeamPulse(session_factory, tz, clock),
     )
     learning = LearningService(session_factory, clock)
     delegation = DelegationService(llm, adapters, notifiers, tz, clock)
@@ -205,6 +207,7 @@ def create_app(
     followups = FollowUpService(
         session_factory, llm, adapters, notifiers, policy, notices, tz, clock
     )
+    skills.followups = followups
     agent = ConversationAgent(
         session_factory,
         llm,
@@ -229,6 +232,7 @@ def create_app(
         prep=skills.prep,
         notices=notices,
         reminders=reminders,
+        pulse=skills.pulse,
     )
 
     stt = stt or WhisperSTT(app_config.stt)

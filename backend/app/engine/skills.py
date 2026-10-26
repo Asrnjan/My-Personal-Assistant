@@ -9,8 +9,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.config import WorkdayConfig
+from app.engine.followup import FollowUpService
 from app.engine.notes import MeetingNotes
 from app.engine.prep import MeetingPrep
+from app.engine.pulse import TeamPulse
 from app.engine.reminders import Reminders
 from app.engine.triage import InboxTriage
 
@@ -22,6 +24,8 @@ class Skills:
     notes: MeetingNotes | None = None
     reminders: Reminders | None = None
     workday: WorkdayConfig | None = None
+    pulse: TeamPulse | None = None
+    followups: FollowUpService | None = None
 
 
 _ITEM_REF_OPTIONAL = {
@@ -118,6 +122,33 @@ SKILL_TOOLS: list[dict[str, Any]] = [
             "reminded of, that is still open, plus people waiting on an answer."
         ),
         "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "waiting_on",
+        "description": (
+            "Everything the CEO is waiting on from their team: delegated work, late items "
+            "first, with deadlines and whether it was confirmed."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "team_pulse",
+        "description": (
+            "This week for the team: what each person finished, has open and let slip, and "
+            "who may be overloaded."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "delegation_done",
+        "description": "The CEO says delegated work is finished; closes its follow-up.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "item_ref": {"type": "string", "description": "The item's id or number."}
+            },
+            "required": ["item_ref"],
+        },
     },
     {
         "name": "reminder_done",

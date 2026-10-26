@@ -1495,6 +1495,31 @@ class ConversationAgent:
             waiting = [f"{who} has {n} emails waiting for you" for who, n in unanswered_senders(s)]
         return {"open_promises_and_reminders": open_items, "people_waiting": waiting}
 
+    def _tool_waiting_on(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.pulse is None:
+            return {"error": "That isn't available."}
+        waiting = self.skills.pulse.waiting_on()
+        return {"waiting_on": waiting or ["Nothing: no delegated work is open."]}
+
+    def _tool_team_pulse(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.pulse is None:
+            return {"error": "That isn't available."}
+        return {"pulse": self.skills.pulse.weekly()}
+
+    def _tool_delegation_done(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
+        if self.skills.followups is None:
+            return {"error": "That isn't available."}
+        followups = self.skills.followups
+
+        def finish(_s: Session, item: ItemRow) -> Any:
+            return item.id
+
+        found = self._with_item(state, args, finish)
+        if isinstance(found, dict):
+            return found
+        title = followups.finish(str(found))
+        return {"status": "closed", "title": title}
+
     def _tool_reminder_done(self, state: _State, turn: _Turn, args: dict[str, Any]) -> Any:
         if self.skills.reminders is None:
             return {"error": "Reminders aren't available."}

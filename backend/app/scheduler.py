@@ -24,6 +24,7 @@ from app.engine.briefing import Brief, Briefer, BriefKind
 from app.engine.followup import FollowUpReport, FollowUpService
 from app.engine.notices import Notices
 from app.engine.prep import MeetingPrep
+from app.engine.pulse import TeamPulse
 from app.engine.reminders import Reminders
 from app.engine.sync import SyncOutcome, SyncService
 from app.events import Event, EventBus
@@ -58,6 +59,7 @@ class AssistantJobs:
         prep: MeetingPrep | None = None,
         notices: Notices | None = None,
         reminders: Reminders | None = None,
+        pulse: TeamPulse | None = None,
     ) -> None:
         self._sync = sync
         self._briefer = briefer
@@ -68,6 +70,7 @@ class AssistantJobs:
         self._prep = prep
         self._notices = notices
         self._reminders = reminders
+        self._pulse = pulse
         # The scheduler thread and a manual /sync must not ingest at the same time.
         self._sync_lock = threading.Lock()
 
@@ -169,6 +172,22 @@ class AssistantJobs:
         except Exception:
             log.exception("reading promises from sent mail failed")
 
+    def weekly(self) -> list[str]:
+        """The Friday summaries: the team pulse (and, when wired, the activity report)."""
+        texts = []
+        if self._pulse is not None:
+            texts.append(self._pulse.weekly())
+        if self._notices is not None:
+            for text in texts:
+                self._notices.tell(text)
+        return texts
+
+    def background_weekly(self) -> None:
+        try:
+            self.weekly()
+        except Exception:
+            log.exception("weekly summary failed")
+
 
 def build_scheduler(jobs: AssistantJobs, app_config: AppConfig) -> BackgroundScheduler:
     tz = app_config.tz
@@ -200,6 +219,17 @@ def build_scheduler(jobs: AssistantJobs, app_config: AppConfig) -> BackgroundSch
         jobs.background_promises,
         IntervalTrigger(hours=SENT_SCAN_HOURS, timezone=tz),
         id="promises",
+    )
+    weekly = app_config.workday
+    scheduler.add_job(
+        jobs.background_weekly,
+        CronTrigger(
+            day_of_week=weekly.weekly_day,
+            hour=weekly.weekly_time.hour,
+            minute=weekly.weekly_time.minute,
+            timezone=tz,
+        ),
+        id="weekly",
     )
     if app_config.workday.prep_minutes_before:
         scheduler.add_job(
